@@ -278,72 +278,72 @@
     <message>
         <location filename="../captureWidget.cc" line="134"/>
         <source>Delete last captured file</source>
-        <translation>Eliminar el último archivo capturado</translation>
+        <translation>Usuń ostatni przechwycony plik</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="140"/>
         <source>View capture directory</source>
-        <translation>Ver el directorio de captura</translation>
+        <translation>Zobacz katalog przechwytywania</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="156"/>
         <source>Type:</source>
-        <translation>Tipo:</translation>
+        <translation>Typ:</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="167"/>
         <source>Limit:</source>
-        <translation>Límite:</translation>
+        <translation>Limit:</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="168"/>
         <source>Set a capture time limit</source>
-        <translation>Establecer límite de tiempo de captura</translation>
+        <translation>Ustaw limit czasu przechwytywania</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="174"/>
         <source>secs</source>
-        <translation>segundos</translation>
+        <translation>sek</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="174"/>
         <source>frames</source>
-        <translation>fotogramas</translation>
+        <translation>klatki</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="257"/>
         <source>Start capturing data</source>
-        <translation>Iniciar la captura de datos</translation>
+        <translation>Zacznij przechwytywanie danych</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="262"/>
         <source>Pause in-process recording</source>
-        <translation>Pausar la grabación en proceso</translation>
+        <translation>Zatrzymaj nagrywanie w trakcie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="268"/>
         <source>Stop capturing data</source>
-        <translation>Detener la captura de datos</translation>
+        <translation>Zatrzymaj przechwytywanie danych</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="278"/>
         <source>Reset autorun settings</source>
-        <translation>Restablecer configuraciones de ejecución automática</translation>
+        <translation>Zresetuj ustawienia automatycznego uruchamiania</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="308"/>
         <source>Capture</source>
-        <translation>Capturar</translation>
+        <translation>Przechwyć</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="369"/>
         <source>The </source>
-        <translation>El </translation>
+        <translation>Format </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="370"/>
         <source> file format is selected, but the filename template does not contain either the &quot;%INDEX&quot; or &quot;%I&quot; pattern.  Output files may therefore overwrite each other</source>
-        <translation>formato de archivo está seleccionado, pero la plantilla de nombre de archivo no contiene el patrón &quot;%INDEX&quot; o &quot;%I&quot;. Por lo tanto, los archivos de salida pueden sobrescribirse</translation>
+        <translation> został wybrany, ale wzór nazwy pliku nie zawiera &quot;%INDEX&quot; lub &quot;%I&quot;. Pliki wyjściowe mogą się przez to nadpisywać.</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="428"/>
@@ -354,163 +354,163 @@ When using timer mode the image capture type should be FITS and a frame-based ca
 Capture run abandoned</source>
         <translation>
 
-Cuando se utiliza el modo temporizador, el tipo de captura de imagen debe ser FITS y se debe establecer un límite de captura basado en fotogramas.
+Kiedy tryb timera jest w użyciu, powinien być ustawiony format FITS oraz klatkowy limit przechwytywania powinien zostać ustawiony.
 
-Captura iniciada cancelada</translation>
+Przerwano przechwytywanie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="466"/>
         <source>The number of frames in the currently configured capture run is likely to exceed the size of the index in the filename.  Continue?</source>
-        <translation type="unfinished"></translation>
+        <translation>Ilość klatek w obecnie skonfigurowanym przechwytywaniu może przekroczyć wielkość indeksu w nazwie pliku. Kontynuować?</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="507"/>
         <source>Change to next filter: </source>
-        <translation>Cambiar al siguiente filtro: </translation>
+        <translation>Zmień na następny filtr: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="595"/>
         <location filename="../captureWidget.cc" line="605"/>
         <location filename="../captureWidget.cc" line="614"/>
         <source>Start Recording</source>
-        <translation>Iniciar Grabación</translation>
+        <translation>Rozpocznij Nagrywanie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="596"/>
         <source>Output is not writable</source>
-        <translation>La salida no se puede escribir</translation>
+        <translation>Wyjście nie jest możliwe do zapisu</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="606"/>
         <source>Output file exists.  OK to overwrite?</source>
-        <translation>Ya existe el archivo de salida. ¿Sobrescribir?</translation>
+        <translation>Plik wyjściowy istnieje. Nadpisać?</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="615"/>
         <source>Output file exists and is not writable</source>
-        <translation>El archivo de salida existe y no puede escribirse</translation>
+        <translation>Plik wyjściowy istnieje i nie jest możliwy do zapisu</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="626"/>
         <source>Unable to create file for output</source>
-        <translation>No se puede crear el archivo de salida</translation>
+        <translation>Nie można było stworzyć pliku dla wyjścia</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="670"/>
         <source>Pausing camera</source>
-        <translation>Pausar cámara</translation>
+        <translation>Zatrzymywanie kamery</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="686"/>
         <source>Starting timer</source>
-        <translation>Iniciando temporizador</translation>
+        <translation>Startowanie timera\'a</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="688"/>
         <source>Restarting camera</source>
-        <translation>Reinicio de la cámara</translation>
+        <translation>Restartowanie kamery</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="694"/>
         <source>Recording started</source>
-        <translation>Grabación iniciada</translation>
+        <translation>Rozpoczęto nagrywanie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="741"/>
         <source>Recording stopped</source>
-        <translation>Grabación detenida</translation>
+        <translation>Zatrzymano nagrywanie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="812"/>
         <source>TIFF output format has been disabled</source>
-        <translation>El formato de salida TIFF se ha deshabilitado</translation>
+        <translation>Format wyjściowy TIFF został wyłączony</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="834"/>
         <source>PNG output format has been disabled</source>
-        <translation>El formato de salida PNG se ha deshabilitado</translation>
+        <translation>Format wyjściowy PNG został wyłączony</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="857"/>
         <source>FITS output format has been disabled</source>
-        <translation>El formato de salida FITS se ha deshabilitado</translation>
+        <translation>Format wyjściowy FITS został wyłączony</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="882"/>
         <source>MOV output format has been disabled</source>
-        <translation>El formato de salida MOV se ha deshabilitado</translation>
+        <translation>Format wyjściowy MOV został wyłączony</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="907"/>
         <source>Select capture directory</source>
-        <translation>Seleccionar directorio de captura</translation>
+        <translation>Wybierz katalog przechwytywania</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="917"/>
         <source>The selected directory is not writable/accessible</source>
-        <translation>El directorio seleccionado no se puede escribir / acceder</translation>
+        <translation>Wybrany katalog nie jest możliwy do zapisu/dostępny</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="919"/>
         <source>Select another?</source>
-        <translation>¿Seleccionar otro?</translation>
+        <translation>Wybrać inny?</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1025"/>
         <source>Autorun Enabled</source>
-        <translation>Autoejecución Habilitada</translation>
+        <translation>Automatyczne Aruchomienie Włączone</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1034"/>
         <location filename="../captureWidget.cc" line="1040"/>
         <location filename="../captureWidget.cc" line="1044"/>
         <source>Delete File</source>
-        <translation>Eliminar Archivo</translation>
+        <translation>Usuń Plik</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1035"/>
         <source>No last file to delete</source>
-        <translation>No hay último archivo que eliminar</translation>
+        <translation>Brak ostatniego pliku do usunięcia</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1041"/>
         <source>Delete file </source>
-        <translation>Eliminar archivo</translation>
+        <translation>Usuń plik </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1045"/>
         <source>Delete failed for</source>
-        <translation>Error al eliminar</translation>
+        <translation>Usunięcie nie powiodło się dla</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1063"/>
         <source>Capture directory</source>
-        <translation>Directorio de captura</translation>
+        <translation>Katalog przechwytywania</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1323"/>
         <source>Camera: </source>
-        <translation>Cámara: </translation>
+        <translation>Kamera: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1325"/>
         <source>Time: </source>
-        <translation>Hora: </translation>
+        <translation>Czas: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1330"/>
         <source>Timezone: </source>
-        <translation>Zona Horaria: </translation>
+        <translation>Strefa czasowa: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1332"/>
         <source>Profile: </source>
-        <translation>Perfil: </translation>
+        <translation>Profil: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1334"/>
         <source>Target: </source>
-        <translation>Objetivo: </translation>
+        <translation>Cel: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1354"/>
@@ -525,49 +525,49 @@ Captura iniciada cancelada</translation>
     <message>
         <location filename="../captureWidget.cc" line="1362"/>
         <source>Auto</source>
-        <translation>Automático</translation>
+        <translation>Automatycznie</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1418"/>
         <location filename="../captureWidget.cc" line="1447"/>
         <location filename="../captureWidget.cc" line="1454"/>
         <source>not recorded</source>
-        <translation>no grabado</translation>
+        <translation>nie nagrane</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1463"/>
         <source>Image size: </source>
-        <translation>Tamaño de imagen: </translation>
+        <translation>Wielkość obrazu: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1467"/>
         <source>Frame rate/sec: </source>
-        <translation>Tasa fotogramas/seg: </translation>
+        <translation>Framerate/sek: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1469"/>
         <source>n/a (capture paused)</source>
-        <translation>n/d (captura pausada)</translation>
+        <translation>n/d (przechwytywanie zatrzymano)</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1480"/>
         <source>Filter: </source>
-        <translation>Filtro: </translation>
+        <translation>Filtr: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1491"/>
         <source>First frame: </source>
-        <translation>Primer fotograma: </translation>
+        <translation>Pierwsza klatka: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1502"/>
         <source>Middle: </source>
-        <translation>Media: </translation>
+        <translation>Środek: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1506"/>
         <source> (estimate -- recording paused)</source>
-        <translation>(estimado -- grabación pausada)</translation>
+        <translation> (oszacowane -- nagrywanie zatrzymane)</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1516"/>
@@ -582,62 +582,62 @@ Captura iniciada cancelada</translation>
     <message>
         <location filename="../captureWidget.cc" line="1526"/>
         <source>Frames captured: </source>
-        <translation>Fotogramas capturados: </translation>
+        <translation>Klatki przechwycone: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1530"/>
         <source>Frames per second (average): </source>
-        <translation>Fotogramas por segundo (promedio): </translation>
+        <translation>Klatki na sekundę (średnio): </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1533"/>
         <source> (recording paused)</source>
-        <translation>(grabación pausada)</translation>
+        <translation> (nagrywanie zatrzymano)</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1538"/>
         <source>Filename: </source>
-        <translation>Nombre de archivo: </translation>
+        <translation>Nazwa pliku: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1543"/>
         <source>Recording type: </source>
-        <translation>Tipo de grabación: </translation>
+        <translation>Typ nagrywania: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1550"/>
         <source>Limit </source>
-        <translation>Límite</translation>
+        <translation>Limit</translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1552"/>
         <source>(frames) : </source>
-        <translation>(fotogramas) : </translation>
+        <translation>(klatki) : </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1555"/>
         <source>(seconds) : </source>
-        <translation>(segundos) : </translation>
+        <translation>(sekundy) : </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1561"/>
         <source>Histogram Min: </source>
-        <translation>Histograma Mín: </translation>
+        <translation>Histogram Min: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1563"/>
         <source>Histogram Max: </source>
-        <translation>Histograma Máx: </translation>
+        <translation>Histogram Max: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1568"/>
         <source>Histogram %: </source>
-        <translation>Histograma %: </translation>
+        <translation>Histogram %: </translation>
     </message>
     <message>
         <location filename="../captureWidget.cc" line="1576"/>
         <source>Unable to create settings output file</source>
-        <translation>No se puede crear el archivo de salida de configuración</translation>
+        <translation>Nie można było utworzyć pliku ustawień wyjścia</translation>
     </message>
 </context>
 <context>
