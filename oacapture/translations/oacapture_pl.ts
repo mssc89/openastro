@@ -645,39 +645,39 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../controlWidget.cc" line="46"/>
         <source>Gain</source>
-        <translation>Ganancia</translation>
+        <translation>Przyrost</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="47"/>
         <source>Exposure</source>
-        <translation>Exposición</translation>
+        <translation>Ekspozycja</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="48"/>
         <source>Framerate (fps)</source>
-        <translation>Tasa (fps)</translation>
+        <translation>Framerate (fps)</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="49"/>
         <location filename="../controlWidget.cc" line="691"/>
         <source>Exp. Range</source>
-        <translation>Rango Exposición</translation>
+        <translation>Zakres ekspozycji</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="50"/>
         <source>Auto</source>
-        <translation>Automático</translation>
+        <translation>Automatycznie</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="73"/>
         <location filename="../controlWidget.cc" line="74"/>
         <source>Select control to display</source>
-        <translation>Seleccione el control para mostrar</translation>
+        <translation>Wybierz kontrolke do wyświetlenia</translation>
     </message>
     <message>
         <location filename="../controlWidget.cc" line="249"/>
         <source>Control</source>
-        <translation>Control</translation>
+        <translation>Kontrola</translation>
     </message>
 </context>
 <context>
@@ -685,23 +685,22 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../demosaicSettings.cc" line="40"/>
         <source>When demosaic is enabled:</source>
-        <translatorcomment>Revisar la traducción para demosaic</translatorcomment>
-        <translation>Cuando Demosaic está habilitado:</translation>
+        <translation>Kiedy demoz jest włączony:</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="41"/>
         <source>Demosaic preview image</source>
-        <translation>Demosaic vista previa</translation>
+        <translation>Demozowe zdjęcie poglądowe</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="43"/>
         <source>Demosaic output data</source>
-        <translation>Datos de salida Demosaic</translation>
+        <translation>Demozaiczne dane wyjściowe</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="46"/>
         <source>Bayer format</source>
-        <translation>Formato Bayer</translation>
+        <translation>Format Bayer</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="48"/>
@@ -726,28 +725,27 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../demosaicSettings.cc" line="52"/>
         <source>Auto</source>
-        <translatorcomment>Puede quedarse Auto</translatorcomment>
-        <translation>Automático</translation>
+        <translation>Automatycznie</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="69"/>
         <source>Demosaic method</source>
-        <translation>Método Demosaic</translation>
+        <translation>Metoda demozu</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="71"/>
         <source>Nearest Neighbour</source>
-        <translation>Al más cercano</translation>
+        <translation>Najbliższy sąsiad</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="72"/>
         <source>Bilinear</source>
-        <translation>Bilinear</translation>
+        <translation>Bilinearnie</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="73"/>
         <source>Smooth Hue</source>
-        <translation>Tono suave</translation>
+        <translation>Gładki odcień</translation>
     </message>
     <message>
         <location filename="../demosaicSettings.cc" line="74"/>
@@ -760,77 +758,77 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../fitsSettings.cc" line="51"/>
         <source>Observer</source>
-        <translation>Observador</translation>
+        <translation>Obserwator</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="52"/>
         <source>Site latitude</source>
-        <translation>Latitud</translation>
+        <translation>Szerokość geograficzna</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="53"/>
         <source>Site longitude</source>
-        <translation>longitud</translation>
+        <translation>Długość geograficzna</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="56"/>
         <source>Telescope</source>
-        <translation>Telescopio</translation>
+        <translation>Teleskop</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="57"/>
         <source>Focal Length (mm)</source>
-        <translation>Distancia Focal (mm)</translation>
+        <translation>Długość ogniskowej (mm)</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="58"/>
         <source>Aperture Diameter (mm)</source>
-        <translation>Diámetro Apertura (mm)</translation>
+        <translation>Średnica otworu (mm)</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="59"/>
         <source>Aperture Area (mm)</source>
-        <translation>Área de Apertura (mm)</translation>
+        <translation>Powierzchnia otworu (mm)</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="61"/>
         <source>Instrument</source>
-        <translation>Instrumentos</translation>
+        <translation>Instrument</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="62"/>
         <source>Pixel width (um)</source>
-        <translation>Ancho del Pixel (um)</translation>
+        <translation>Szerokość pikseli (um)</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="63"/>
         <source>Pixel height (um)</source>
-        <translation>Alto del Pixel (um)</translation>
+        <translation>Wysokość pikseli (um)</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="64"/>
         <source>X subframe origin</source>
-        <translation type="unfinished"></translation>
+        <translation>pochodzenie klatki X</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="65"/>
         <source>Y subframe origin</source>
-        <translation type="unfinished"></translation>
+        <translation>pochodzenie klatki Y</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="67"/>
         <source>Object</source>
-        <translation>Objeto</translation>
+        <translation>Obiekt</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="68"/>
         <source>Filter</source>
-        <translation>Filtro</translation>
+        <translation>Filtr</translation>
     </message>
     <message>
         <location filename="../fitsSettings.cc" line="54"/>
         <source>Comments</source>
-        <translation>Comentarios</translation>
+        <translation>Komentarze</translation>
     </message>
 </context>
 <context>
@@ -838,12 +836,12 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../filterSettings.cc" line="56"/>
         <source>Add Item</source>
-        <translation>Añadir item</translation>
+        <translation>Dodaj</translation>
     </message>
     <message>
         <location filename="../filterSettings.cc" line="61"/>
         <source>Remove Item</source>
-        <translation>Eliminar item</translation>
+        <translation>Usuń</translation>
     </message>
 </context>
 <context>
@@ -851,28 +849,27 @@ Przerwano przechwytywanie</translation>
     <message>
         <location filename="../generalSettings.cc" line="38"/>
         <source>Load and save settings automatically</source>
-        <translation>Cargar y guardar configuraciones automáticamente</translation>
+        <translation>Załaduj i zapisz ustawienia automatycznie</translation>
     </message>
     <message>
         <location filename="../generalSettings.cc" line="44"/>
         <source>Use circular reticle</source>
-        <translation>Usar retícula circular</translation>
+        <translation>Używaj okrągłej siatki przyrządu</translation>
     </message>
     <message>
         <location filename="../generalSettings.cc" line="45"/>
         <source>Use cross reticle</source>
-        <translation>Usar retícula en cruz</translation>
+        <translation>Używaj krzyżowej siatki przyrządu</translation>
     </message>
     <message>
         <location filename="../generalSettings.cc" line="46"/>
         <source>Use tramline reticle</source>
-        <translatorcomment>Buscar traducción apropiada para tramline</translatorcomment>
-        <translation>Usar retícula tramline</translation>
+        <translation>Używaj tramline\'owej siatki przyrządu</translation>
     </message>
     <message>
         <location filename="../generalSettings.cc" line="55"/>
         <source>Recentre Reticle</source>
-        <translation>Recentrar Retícula</translation>
+        <translation>Wycentruj siatkę przyrządu</translation>
     </message>
     <message>
         <location filename="../generalSettings.cc" line="56"/>
