@@ -3,7 +3,7 @@ To build the binaries a few prerequisites are required.
 The binaries link against the ZWO ASI camera and ffmpeg libraries as
 well as libusb1, the dc1394 library libv4l and Qt4.  The latter three
 should be fairly easy to find the development packages for in most
-distributions.  On Ubuntu, Mint (and perhaps Debian) you probably need:
+distributions. On Ubuntu, Mint (and perhaps Debian) you probably need:
 
   libv4l-dev
   libqt4-dev
@@ -11,7 +11,7 @@ distributions.  On Ubuntu, Mint (and perhaps Debian) you probably need:
   libcfitsio3-dev
   libudev-dev
   libtiff-dev
-	libsdl1.2-dev
+  libsdl1.2-dev
   qt4-dev-tools
   qt4-qmake
   gawk
@@ -21,8 +21,8 @@ distributions.  On Ubuntu, Mint (and perhaps Debian) you probably need:
   autoconf
   autoconf-archive
   libtool
-	libusb-1.0-0-dev
-	libhidapi-dev
+  libusb-1.0-0-dev
+  libhidapi-dev
 
 On Fedora I found these to be sufficient:
 
@@ -54,6 +54,10 @@ by a user other than root.
 yasm is required for the ffmpeg build.  Tweaking may be necessary to
 get all the prerequisites installed, but configure should tell you
 about most things.
+
+To install all required dev packages on Ubuntu 19.04 simply copy-paste this command (some of them are installed by default):
+
+  $ sudo apt install libqt4-dev libv4l-dev libdc1394-22-dev libcfitsio-dev libudev-dev libtiff-dev libsdl1.2-dev qt4-dev-tools qt4-qmake gawk gcc g++ yasm autoconf autoconf-archive libtool libusb-1.0-0-dev libhidapi-dev make
 
 To build all the binaries from the top level you should just be able
 to do:
