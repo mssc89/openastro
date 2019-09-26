@@ -47,7 +47,8 @@ static const char *cameraNames[] = {
  */
 
 int
-oaZWASIGetCameras ( CAMERA_LIST* deviceList, int flags )
+oaZWASIGetCameras ( CAMERA_LIST* deviceList, unsigned long featureFlags,
+		int flags )
 {
   unsigned int		numFound = 0, i;
   int			ret;
@@ -89,12 +90,10 @@ oaZWASIGetCameras ( CAMERA_LIST* deviceList, int flags )
       typesFound[ cameraType+1 ]++;
 
       if (!( dev = malloc ( sizeof ( oaCameraDevice )))) {
-        _oaFreeCameraDeviceList ( deviceList );
         return -OA_ERR_MEM_ALLOC;
       }
       if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
-        free (( void* ) dev );
-        _oaFreeCameraDeviceList ( deviceList );
+        ( void ) free (( void* ) dev );
         return -OA_ERR_MEM_ALLOC;
       }
       _oaInitCameraDeviceFunctionPointers ( dev );
@@ -111,9 +110,7 @@ oaZWASIGetCameras ( CAMERA_LIST* deviceList, int flags )
       dev->initCamera = oaZWASIInitCamera;
       dev->hasLoadableFirmware = 0;
       if (( ret = _oaCheckCameraArraySize ( deviceList )) < 0 ) {
-        free (( void* ) dev );
-        free (( void* ) _private );
-        _oaFreeCameraDeviceList ( deviceList );
+        ( void ) free (( void* ) _private );
         return ret;
       }
       deviceList->cameraList[ deviceList->numCameras++ ] = dev;

@@ -1,8 +1,8 @@
 /*****************************************************************************
  *
- * ptrInit-udev.c -- Initialise PTR device (udev)
+ * ptrConnect-udev.c -- Initialise PTR device (udev)
  *
- * Copyright 2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <pthread.h>
+#include <sys/select.h>
 
 #include <openastro/util.h>
 #include <openastro/timer.h>
@@ -41,6 +42,7 @@
 
 
 static void _ptrInitFunctionPointers ( oaPTR*, uint32_t );
+static void _getSysInfo ( PRIVATE_INFO* );
 
 
 /**
@@ -93,8 +95,8 @@ oaPTRInit ( oaPTRDevice* device )
   privateInfo->index = -1;
 
   if (( ptrDesc = open ( devInfo->sysPath, O_RDWR | O_NOCTTY )) < 0 ) {
-    fprintf ( stderr, "Can't open %s read-write, errno = %d\n",
-        devInfo->sysPath, errno );
+    fprintf ( stderr, "%s: Can't open %s read-write, errno = %d (%s)\n",
+        __FUNCTION__, devInfo->sysPath, errno, strerror ( errno ));
     free (( void* ) ptr );
     free (( void* ) privateInfo );
     free (( void* ) commonInfo );
@@ -105,8 +107,8 @@ oaPTRInit ( oaPTRDevice* device )
     int errnoCopy = errno;
     errno = 0;
     while (( close ( ptrDesc ) < 0 ) && EINTR == errno );
-    fprintf ( stderr, "%s: can't get lock on %s, errno = %d\n", __FUNCTION__,
-        devInfo->sysPath, errnoCopy );
+    fprintf ( stderr, "%s: can't get lock on %s, errno = %d (%s)\n",
+				__FUNCTION__, devInfo->sysPath, errnoCopy, strerror ( errno ));
     free (( void* ) ptr );
     free (( void* ) privateInfo );
     free (( void* ) commonInfo );
@@ -133,8 +135,13 @@ oaPTRInit ( oaPTRDevice* device )
   tio.c_cc[VTIME] = 4;
   tio.c_cflag &= ~PARENB; // no parity
   tio.c_cflag &= ~CSTOPB; // 1 stop bit
+#ifdef PTRV1
   cfsetispeed ( &tio, B38400 );
   cfsetospeed ( &tio, B38400 );
+#else
+  cfsetispeed ( &tio, B3000000 );
+  cfsetospeed ( &tio, B3000000 );
+#endif
 
   if ( tcsetattr ( ptrDesc, TCSANOW, &tio )) {
     int errnoCopy = errno;
@@ -217,6 +224,12 @@ oaPTRInit ( oaPTRDevice* device )
   commonInfo->def [ OA_TIMER_CTRL_MODE ] = OA_TIMER_MODE_TRIGGER;
   privateInfo->requestedMode = OA_TIMER_MODE_TRIGGER;
 
+  ptr->controls [ OA_TIMER_CTRL_EXT_LED_ENABLE ] = OA_CTRL_TYPE_BOOLEAN;
+  commonInfo->min [ OA_TIMER_CTRL_EXT_LED_ENABLE ] = 0;
+  commonInfo->max [ OA_TIMER_CTRL_EXT_LED_ENABLE ] = 1;
+  commonInfo->step [ OA_TIMER_CTRL_EXT_LED_ENABLE ] = 1;
+  commonInfo->def [ OA_TIMER_CTRL_EXT_LED_ENABLE ] = 0;
+
   if ( privateInfo->version >= 0x0101 ) {
     ptr->features.gps = 1;
   }
@@ -225,6 +238,8 @@ oaPTRInit ( oaPTRDevice* device )
 
   usleep ( 500000 );
   tcflush ( ptrDesc, TCIFLUSH );
+
+	_getSysInfo ( privateInfo );
 
   return ptr;
 }
@@ -244,6 +259,9 @@ _ptrInitFunctionPointers ( oaPTR* ptr, uint32_t version )
   ptr->funcs.readTimestamp = oaPTRGetTimestamp;
   if ( version >= 0x0101 ) {
     ptr->funcs.readGPS = oaPTRReadGPS;
+  }
+  if ( version >= 0x0200 ) {
+    ptr->funcs.readCachedGPS = oaPTRReadCachedGPS;
   }
   // FIX ME -- need control range function for PTR
 }
@@ -267,4 +285,56 @@ oaPTRClose ( oaPTR* device )
   }
 
   return -OA_ERR_INVALID_TIMER;
+}
+
+
+static void
+_getSysInfo ( PRIVATE_INFO* privateInfo )
+{
+	char			buffer[ 512 ];
+	int				seenCRC = 0, numRead;
+	int				fd = privateInfo->fd;
+	char*			pos;
+	char*			state;
+	fd_set		readable;
+	struct timeval	timeout;
+
+	if ( _ptrWrite ( fd, "sysconfig\r", 10 )) {
+		fprintf ( stderr, "%s: failed to write sysinfo to PTR\n", __FUNCTION__ );
+		return;
+	}
+
+	do {
+		FD_ZERO ( &readable );
+		FD_SET ( fd, &readable );
+		timeout.tv_sec = 2;
+		timeout.tv_usec = 0;
+		if ( select ( fd + 1, &readable, 0, 0, &timeout ) == 0 ) {
+			fprintf ( stderr, "%s: PTR select #1 timed out\n", __FUNCTION__ );
+			numRead = -1;
+		} else {
+			numRead = _ptrRead ( fd, buffer, sizeof ( buffer ) - 1 );
+			if ( numRead > 0 ) {
+				if (( pos = strstr ( buffer, "External LED control" ))) {
+					state = pos + 22;
+					if ( !strncmp ( state, "Enabled", 7 )) {
+						privateInfo->externalLEDState = 1;
+					} else {
+						if ( !strncmp ( state, "Disabled", 8 )) {
+							privateInfo->externalLEDState = 0;
+						} else {
+							fprintf ( stderr, "Unrecognised LED '%s' state in:\n  %s\n",
+									state, buffer );
+						}
+					}
+				} else {
+					if ( strstr ( buffer, "CRC:" )) {
+						seenCRC = 1;
+					}
+				}
+			}
+		}
+	} while ( numRead > 0 && !seenCRC );
+
+  tcflush ( fd, TCIFLUSH );
 }

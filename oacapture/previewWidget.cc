@@ -2,7 +2,7 @@
  *
  * previewWidget.cc -- class for the preview window in the UI (and more)
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -28,11 +28,16 @@
 #include <oa_common.h>
 
 #include <QtGui>
+#if HAVE_CSTDLIB
 #include <cstdlib>
-#include <math.h>
-#include <pthread.h>
+#endif
+#if HAVE_CMATH
+#include <cmath>
+#endif
 
 extern "C" {
+#include <pthread.h>
+
 #include <openastro/camera.h>
 #include <openastro/demosaic.h>
 #include <openastro/video.h>
@@ -40,11 +45,14 @@ extern "C" {
 #include <openastro/video/formats.h>
 }
 
+#include "commonState.h"
+#include "commonConfig.h"
+#include "outputHandler.h"
+#include "focusOverlay.h"
+
 #include "configuration.h"
 #include "previewWidget.h"
-#include "outputHandler.h"
 #include "histogramWidget.h"
-#include "focusOverlay.h"
 #include "state.h"
 
 
@@ -64,17 +72,17 @@ PreviewWidget::PreviewWidget ( QWidget* parent ) : QFrame ( parent )
   previewEnabled = 1;
   videoFramePixelFormat = OA_PIX_FMT_RGB24;
   framesInFpsCalcPeriod = fpsCalcPeriodStartTime = 0;
-  secondForTemperature = secondForDropped = 0;
+  secondForTemperature = secondForDropped = secondForAutoControls = 0;
   flipX = flipY = 0;
   movingReticle = rotatingReticle = rotationAngle = 0;
   savedXSize = savedYSize = 0;
   recalculateDimensions ( zoomFactor );
   previewBufferLength = 0;
-  previewImageBuffer[0] = writeImageBuffer[0] = 0;
-  previewImageBuffer[1] = writeImageBuffer[1] = 0;
-  expectedSize = config.imageSizeX * config.imageSizeY *
+  previewImageBuffer[0] = writeImageBuffer[0] = nullptr;
+  previewImageBuffer[1] = writeImageBuffer[1] = nullptr;
+  expectedSize = commonConfig.imageSizeX * commonConfig.imageSizeY *
       oaFrameFormats[ videoFramePixelFormat ].bytesPerPixel;
-  demosaic = config.demosaic;
+  demosaic = commonConfig.demosaic;
 
   int r = config.currentColouriseColour.red();
   int g = config.currentColouriseColour.green();
@@ -125,9 +133,9 @@ PreviewWidget::updatePreviewSize ( void )
 {
   int zoomFactor = state.zoomWidget->getZoomFactor();
   recalculateDimensions ( zoomFactor );
-  expectedSize = config.imageSizeX * config.imageSizeY *
+  expectedSize = commonConfig.imageSizeX * commonConfig.imageSizeY *
       oaFrameFormats[ videoFramePixelFormat ].bytesPerPixel;
-  int newBufferLength = config.imageSizeX * config.imageSizeY * 3;
+  int newBufferLength = commonConfig.imageSizeX * commonConfig.imageSizeY * 3;
   if ( newBufferLength > previewBufferLength ) {
     if (!( previewImageBuffer[0] = realloc ( previewImageBuffer[0],
         newBufferLength ))) {
@@ -139,8 +147,8 @@ PreviewWidget::updatePreviewSize ( void )
     }
     previewBufferLength = newBufferLength;
   }
-  diagonalLength = sqrt ( config.imageSizeX * config.imageSizeX +
-      config.imageSizeY * config.imageSizeY );
+  diagonalLength = sqrt ( commonConfig.imageSizeX * commonConfig.imageSizeX +
+      commonConfig.imageSizeY * commonConfig.imageSizeY );
 }
 
 
@@ -148,8 +156,8 @@ void
 PreviewWidget::recalculateDimensions ( int zoomFactor )
 {
   currentZoom = zoomFactor;
-  currentZoomX = config.imageSizeX * zoomFactor / 100;
-  currentZoomY = config.imageSizeY * zoomFactor / 100;
+  currentZoomX = commonConfig.imageSizeX * zoomFactor / 100;
+  currentZoomY = commonConfig.imageSizeY * zoomFactor / 100;
   if ( savedXSize && savedYSize ) {
     reticleCentreX = ( reticleCentreX * currentZoomX ) / savedXSize;
     reticleCentreY = ( reticleCentreY * currentZoomY ) / savedYSize;
@@ -181,12 +189,30 @@ PreviewWidget::paintEvent ( QPaintEvent* event )
   painter.drawImage ( 0, 0, image );
   pthread_mutex_unlock ( &imageMutex );
 
+  if ( commonState.cropMode ) {
+    int x, y, w, h;
+    painter.setRenderHint ( QPainter::Antialiasing, false );
+    painter.setPen ( QPen ( Qt::yellow, 2, Qt::SolidLine, Qt::FlatCap ));
+    x = ( commonConfig.imageSizeX - commonState.cropSizeX ) / 2 - 2;
+    y = ( commonConfig.imageSizeY - commonState.cropSizeY ) / 2 - 2;
+    w = commonState.cropSizeX + 4;
+    h = commonState.cropSizeY + 4;
+    if ( currentZoom != 100 ) {
+      float zoomFactor = currentZoom / 100.0;
+      x *= zoomFactor;
+      y *= zoomFactor;
+      w *= zoomFactor;
+      h *= zoomFactor;
+    }
+    painter.drawRect ( x, y, w, h );
+  }
+
   painter.setTransform ( rotationTransform );
   painter.setRenderHint ( QPainter::Antialiasing, true );
   painter.setPen ( QPen ( Qt::red, 2, Qt::SolidLine, Qt::FlatCap ));
 
   if ( config.showReticle ) {
-    switch ( config.reticleStyle ) {
+    switch ( generalConf.reticleStyle ) {
 
       case RETICLE_CIRCLE:
         painter.drawEllipse ( reticleCentreX - 50, reticleCentreY - 50,
@@ -328,7 +354,7 @@ void
 PreviewWidget::setVideoFramePixelFormat ( int format )
 {
   videoFramePixelFormat = format;
-  expectedSize = config.imageSizeX * config.imageSizeY *
+  expectedSize = commonConfig.imageSizeX * commonConfig.imageSizeY *
       oaFrameFormats[ videoFramePixelFormat ].bytesPerPixel;
 }
 
@@ -398,207 +424,6 @@ PreviewWidget::forceRecordingStop ( void )
 
 
 void
-PreviewWidget::processFlip ( void* imageData, int length, int format )
-{
-  uint8_t* data = ( uint8_t* ) imageData;
-  int assumedFormat = format;
-
-  // fake up a format for mosaic frames here as properly flipping a
-  // mosaicked frame would be quite hairy
-
-  if ( oaFrameFormats[ format ].rawColour ) {
-    if ( oaFrameFormats[ format ].bitsPerPixel == 8 ) {
-      assumedFormat = OA_PIX_FMT_GREY8;
-    } else {
-      if ( oaFrameFormats[ format ].bitsPerPixel == 16 ) {
-        assumedFormat = OA_PIX_FMT_GREY16BE;
-      } else {
-        qWarning() << __FUNCTION__ << "No flipping idea how to handle format"
-            << format;
-      }
-    }
-  }
-
-  switch ( assumedFormat ) {
-    case OA_PIX_FMT_GREY8:
-      processFlip8Bit ( data, length );
-      break;
-    case OA_PIX_FMT_GREY16BE:
-    case OA_PIX_FMT_GREY16LE:
-      processFlip16Bit ( data, length );
-      break;
-    case OA_PIX_FMT_RGB24:
-    case OA_PIX_FMT_BGR24:
-      processFlip24BitColour ( data, length );
-      break;
-    default:
-      qWarning() << __FUNCTION__ << " unable to flip format " << format;
-      break;
-  }
-}
-
-
-void
-PreviewWidget::processFlip8Bit ( uint8_t* imageData, int length )
-{
-  if ( flipX && flipY ) {
-    uint8_t* p1 = imageData;
-    uint8_t* p2 = imageData + length - 1;
-    uint8_t s;
-    while ( p1 < p2 ) {
-      s = *p1;
-      *p1++ = *p2;
-      *p2-- = s;
-    }
-  } else {
-    if ( flipX ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      for ( unsigned int y = 0; y < config.imageSizeY; y++ ) {
-        p1 = imageData + y * config.imageSizeX;
-        p2 = p1 + config.imageSizeX - 1;
-        while ( p1 < p2 ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2-- = s;
-        }
-      }
-    }
-    if ( flipY ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      p1 = imageData;
-      for ( unsigned int y = config.imageSizeY - 1; y >= config.imageSizeY / 2;
-          y-- ) {
-        p2 = imageData + y * config.imageSizeX;
-        for ( unsigned int x = 0; x < config.imageSizeX; x++ ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-        }
-      }
-    }
-  }
-}
-
-
-void
-PreviewWidget::processFlip16Bit ( uint8_t* imageData, int length )
-{
-  if ( flipX && flipY ) {
-    uint8_t* p1 = imageData;
-    uint8_t* p2 = imageData + length - 2;
-    uint8_t s;
-    while ( p1 < p2 ) {
-      s = *p1;
-      *p1++ = *p2;
-      *p2++ = s;
-      s = *p1;
-      *p1++ = *p2;
-      *p2 = s;
-      p2 -= 3;
-    }
-  } else {
-    if ( flipX ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      for ( unsigned int y = 0; y < config.imageSizeY; y++ ) {
-        p1 = imageData + y * config.imageSizeX * 2;
-        p2 = p1 + ( config.imageSizeX - 1 ) * 2;
-        while ( p1 < p2 ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-          s = *p1;
-          *p1++ = *p2;
-          *p2 = s;
-          p2 -= 3;
-        }
-      }
-    }
-    if ( flipY ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      p1 = imageData;
-      for ( unsigned int y = config.imageSizeY - 1; y > config.imageSizeY / 2;
-          y-- ) {
-        p2 = imageData + y * config.imageSizeX * 2;
-        for ( unsigned int x = 0; x < config.imageSizeX * 2; x++ ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-        }
-      }
-    }
-  }
-}
-
-
-void
-PreviewWidget::processFlip24BitColour ( uint8_t* imageData, int length )
-{
-  if ( flipX && flipY ) {
-    uint8_t* p1 = imageData;
-    uint8_t* p2 = imageData + length - 3;
-    uint8_t s;
-    while ( p1 < p2 ) {
-      s = *p1;
-      *p1++ = *p2;
-      *p2++ = s;
-      s = *p1;
-      *p1++ = *p2;
-      *p2++ = s;
-      s = *p1;
-      *p1++ = *p2;
-      *p2 = s;
-      p2 -= 5;
-    }
-  } else {
-    if ( flipX ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      for ( unsigned int y = 0; y < config.imageSizeY; y++ ) {
-        p1 = imageData + y * config.imageSizeX * 3;
-        p2 = p1 + ( config.imageSizeX - 1 ) * 3;
-        while ( p1 < p2 ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-          s = *p1;
-          *p1++ = *p2;
-          *p2 = s;
-          p2 -= 5;
-        }
-      }
-    }
-    if ( flipY ) {
-      uint8_t* p1;
-      uint8_t* p2;
-      uint8_t s;
-      p1 = imageData;
-      for ( unsigned int y = config.imageSizeY - 1; y > config.imageSizeY / 2;
-          y-- ) {
-        p2 = imageData + y * config.imageSizeX * 3;
-        for ( unsigned int x = 0; x < config.imageSizeX * 3; x++ ) {
-          s = *p1;
-          *p1++ = *p2;
-          *p2++ = s;
-        }
-      }
-    }
-  }
-}
-
-
-void
 PreviewWidget::setMonoPalette ( QColor colour )
 {
   unsigned int r = colour.red();
@@ -620,14 +445,16 @@ PreviewWidget::setMonoPalette ( QColor colour )
 
 
 void*
-PreviewWidget::updatePreview ( void* args, void* imageData, int length )
+PreviewWidget::updatePreview ( void* args, void* imageData, int length,
+		void* metadata )
 {
-  STATE*		state = ( STATE* ) args;
+  COMMON_STATE*		commonState = ( COMMON_STATE* ) args;
+  STATE*					state = ( STATE* ) commonState->localState;
   PreviewWidget*	self = state->previewWidget;
   struct timeval	t;
   int			doDisplay = 0;
   int			doHistogram = 0;
-  unsigned int		previewPixelFormat, writePixelFormat;
+  unsigned int		previewPixelFormat, writePixelFormat, pixelFormat;
   // write straight from the data if possible
   void*			previewBuffer = imageData;
   void*			writeBuffer = imageData;
@@ -640,15 +467,15 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
 
   // don't do anything if the length is not as expected
   if ( length != self->expectedSize ) {
-    // qWarning() << "size mismatch.  have:" << length << " expected: "
-    //    << self->expectedSize;
+    //qWarning() << "size mismatch.  have:" << length << " expected: "
+		//		<< self->expectedSize;
     return 0;
   }
 
   // assign the temporary buffers for image transforms if they
   // don't already exist or the existing ones are too small
 
-  maxLength = config.imageSizeX * config.imageSizeY * 6;
+  maxLength = commonConfig.imageSizeX * commonConfig.imageSizeY * 6;
   if ( !self->previewImageBuffer[0] ||
       self->previewBufferLength < maxLength ) {
     self->previewBufferLength = maxLength;
@@ -705,8 +532,9 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
       }
     }
     ( void ) oaconvert ( previewBuffer,
-        self->previewImageBuffer[ currentPreviewBuffer ], config.imageSizeX,
-        config.imageSizeY, self->videoFramePixelFormat, previewPixelFormat );
+        self->previewImageBuffer[ currentPreviewBuffer ],
+				commonConfig.imageSizeX, commonConfig.imageSizeY,
+				self->videoFramePixelFormat, previewPixelFormat );
     previewBuffer = self->previewImageBuffer [ currentPreviewBuffer ];
 
     // we can flip the preview image here if required, but not the
@@ -714,16 +542,21 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
     // FIX ME -- work this out some time
 
     if ( self->flipX || self->flipY ) {
-      self->processFlip ( previewBuffer, length, previewPixelFormat );
+			int axis = ( self->flipX ? OA_FLIP_X : 0 ) | ( self->flipY ?
+					OA_FLIP_Y : 0 );
+      oaFlipImage ( previewBuffer, commonConfig.imageSizeX,
+					commonConfig.imageSizeY, previewPixelFormat, axis );
     }
   } else {
     // do a vertical/horizontal flip if required
     if ( self->flipX || self->flipY ) {
       // this is going to make a mess for data we intend to demosaic.
       // the user will have to deal with that
+			int axis = ( self->flipX ? OA_FLIP_X : 0 ) | ( self->flipY ?
+					OA_FLIP_Y : 0 );
       ( void ) memcpy ( self->writeImageBuffer[0], writeBuffer, length );
-      self->processFlip ( self->writeImageBuffer[0], length,
-          writePixelFormat );
+      oaFlipImage ( self->writeImageBuffer[0], commonConfig.imageSizeX,
+					commonConfig.imageSizeY, writePixelFormat, axis );
       // both preview and write will come from this buffer for the
       // time being.  This may change later on
       previewBuffer = self->writeImageBuffer[0];
@@ -743,7 +576,7 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
     previewPixelFormat = self->reduceTo8Bit (
         self->previewImageBuffer[ currentPreviewBuffer ],
         self->previewImageBuffer[ currentPreviewBuffer ],
-        config.imageSizeX, config.imageSizeY, previewPixelFormat );
+        commonConfig.imageSizeX, commonConfig.imageSizeY, previewPixelFormat );
     previewBuffer = self->previewImageBuffer [ currentPreviewBuffer ];
   }
 
@@ -751,7 +584,7 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
   unsigned long now = ( unsigned long ) t.tv_sec * 1000 +
       ( unsigned long ) t.tv_usec / 1000;
 
-  int cfaPattern = config.cfaPattern;
+  int cfaPattern = demosaicConf.cfaPattern;
   if ( OA_DEMOSAIC_AUTO == cfaPattern &&
       oaFrameFormats[ previewPixelFormat ].rawColour ) {
     cfaPattern = oaFrameFormats[ previewPixelFormat ].cfaPattern;
@@ -762,16 +595,18 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
       self->lastDisplayUpdateTime = now;
       doDisplay = 1;
 
-      if ( self->demosaic && config.demosaicPreview ) {
+      if ( self->demosaic && demosaicConf.demosaicPreview ) {
         if ( oaFrameFormats[ previewPixelFormat ].rawColour ) {
           currentPreviewBuffer = ( -1 == currentPreviewBuffer ) ? 0 :
               !currentPreviewBuffer;
           // Use the demosaicking to copy the data to the previewImageBuffer
           ( void ) oademosaic ( previewBuffer,
               self->previewImageBuffer[ currentPreviewBuffer ],
-              config.imageSizeX, config.imageSizeY, 8, cfaPattern,
-              config.demosaicMethod );
-          if ( config.demosaicOutput && previewBuffer == writeBuffer ) {
+              commonConfig.imageSizeX, commonConfig.imageSizeY, 8, cfaPattern,
+              demosaicConf.demosaicMethod );
+          if ( demosaicConf.demosaicOutput && previewBuffer == writeBuffer
+							&& oaFrameFormats[ self->videoFramePixelFormat ].bytesPerPixel
+							== 1 ) {
             writeDemosaicPreviewBuffer = 1;
           }
           previewPixelFormat = OA_DEMOSAIC_FMT ( previewPixelFormat );
@@ -782,11 +617,12 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
       if ( config.showFocusAid ) {
         // This call should be thread-safe
         state->focusOverlay->addScore ( oaFocusScore ( previewBuffer,
-            0, config.imageSizeX, config.imageSizeY, previewPixelFormat ));
+            0, commonConfig.imageSizeX, commonConfig.imageSizeY,
+						previewPixelFormat ));
       }
 
       QImage* newImage;
-      QImage* swappedImage = 0;
+      QImage* swappedImage = nullptr;
 
       // At this point, one way or another we should have an 8-bit image
       // for the preview
@@ -796,11 +632,12 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
 
       if ( OA_PIX_FMT_GREY8 == previewPixelFormat ||
            ( oaFrameFormats[ previewPixelFormat ].rawColour &&
-           ( !self->demosaic || !config.demosaicPreview ))) {
+           ( !self->demosaic || !demosaicConf.demosaicPreview ))) {
         newImage = new QImage (( const uint8_t* ) previewBuffer,
-            config.imageSizeX, config.imageSizeY, config.imageSizeX,
-            QImage::Format_Indexed8 );
-        if ( OA_PIX_FMT_GREY8 == previewPixelFormat && config.colourise ) {
+            commonConfig.imageSizeX, commonConfig.imageSizeY,
+						commonConfig.imageSizeX, QImage::Format_Indexed8 );
+        if ( OA_PIX_FMT_GREY8 == previewPixelFormat &&
+						commonConfig.colourise ) {
           newImage->setColorTable ( self->falseColourTable );
         } else {
           newImage->setColorTable ( self->greyscaleColourTable );
@@ -813,8 +650,8 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
         // right hand edge of the image when the X dimension is an odd
         // number of pixels
         newImage = new QImage (( const uint8_t* ) previewBuffer,
-            config.imageSizeX, config.imageSizeY, config.imageSizeX * 3,
-            QImage::Format_RGB888 );
+            commonConfig.imageSizeX, commonConfig.imageSizeY,
+						commonConfig.imageSizeX * 3, QImage::Format_RGB888 );
         if ( OA_PIX_FMT_BGR24 == previewPixelFormat ) {
           swappedImage = new QImage ( newImage->rgbSwapped());
         } else {
@@ -851,7 +688,10 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
     }
   }
 
-  OutputHandler* output = 0;
+  OutputHandler* output = nullptr;
+  int actualX, actualY;
+  actualX = commonConfig.imageSizeX;
+  actualY = commonConfig.imageSizeY;
   if ( !state->pauseEnabled ) {
     // This should be thread-safe
     output = state->captureWidget->getOutputHandler();
@@ -861,37 +701,61 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
         self->setNewFirstFrameTime = 0;
       }
       state->lastFrameTime = now;
-      if ( config.demosaicOutput &&
+      if ( commonState->cropMode ) {
+        if ( demosaicConf.demosaicOutput && writeDemosaicPreviewBuffer &&
+            oaFrameFormats[ writePixelFormat ].rawColour ) {
+          // This is a special case because as the preview buffer is no
+          // longer required for previewing we can use it directly
+          writeBuffer = previewBuffer;
+          pixelFormat = OA_DEMOSAIC_FMT ( writePixelFormat );
+        } else {
+          pixelFormat = writePixelFormat;
+        }
+        oaInplaceCrop ( writeBuffer, commonConfig.imageSizeX,
+						commonConfig.imageSizeY, commonState->cropSizeX,
+						commonState->cropSizeY,
+            oaFrameFormats[ pixelFormat ].bytesPerPixel );
+        actualX = commonState->cropSizeX;
+        actualY = commonState->cropSizeY;
+        length = actualX * actualY *
+            oaFrameFormats[ pixelFormat ].bytesPerPixel;
+      }
+      if ( demosaicConf.demosaicOutput &&
           oaFrameFormats[ writePixelFormat ].rawColour ) {
         if ( writeDemosaicPreviewBuffer ) {
+          // could be redundant if we're also cropping, but it shouldn't
+          // cause harm
           writeBuffer = previewBuffer;
         } else {
-          // we can use the preview buffer here because we're done with it
-          // for actual preview purposes
+          // we can use the preview buffer here for the output image because
+					// we're done with it for actual preview purposes
           // If it's possible that the write CFA pattern is not the same
           // as the preview one, this code will need fixing to reset
           // cfaPattern, but I can't see that such a thing is possible
           // at the moment
           ( void ) oademosaic ( writeBuffer,
-              self->previewImageBuffer[0], config.imageSizeX,
-              config.imageSizeY, 8, cfaPattern, config.demosaicMethod );
+              self->previewImageBuffer[0], actualX, actualY,
+							oaFrameFormats[ self->videoFramePixelFormat ].bitsPerPixel,
+							cfaPattern, demosaicConf.demosaicMethod );
           writeBuffer = self->previewImageBuffer[0];
         }
         writePixelFormat = OA_DEMOSAIC_FMT ( writePixelFormat );
       }
       // These calls should be thread-safe
-      if ( state->timer->isInitialised() && state->timer->isRunning()) {
-        oaTimerStamp* ts = state->timer->readTimestamp();
+      if ( commonState->timer->isInitialised() &&
+					commonState->timer->isRunning()) {
+        oaTimerStamp* ts = commonState->timer->readTimestamp();
         timestamp = ts->timestamp;
         comment = commentStr;
         ( void ) snprintf ( comment, 64, "Timer frame index: %d\n", ts->index );
       } else {
-        timestamp = 0;
-        comment = 0;
+        timestamp = nullptr;
+        comment = nullptr;
       }
       if ( output->addFrame ( writeBuffer, timestamp,
           // This call should be thread-safe
-          state->controlWidget->getCurrentExposure(), comment ) < 0 ) {
+          state->controlWidget->getCurrentExposure(), comment,
+					( FRAME_METADATA* ) metadata ) < 0 ) {
         self->recordingInProgress = 0;
         self->manualStop = 0;
         state->autorunEnabled = 0;
@@ -918,8 +782,8 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
 
     if ( state->histogramOn ) {
       // This call should be thread-safe
-      state->histogramWidget->process ( writeBuffer, config.imageSizeX,
-          config.imageSizeY, length, writePixelFormat );
+      state->histogramWidget->process ( writeBuffer, actualX, actualY,
+          length, writePixelFormat );
       doHistogram = 1;
     }
   }
@@ -934,6 +798,10 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
     emit self->updateDroppedFrames();
     self->secondForTemperature = t.tv_sec;
   }
+	if ( t.tv_sec != self->secondForAutoControls ) {
+		emit self->updateAutoControls();
+		self->secondForAutoControls = t.tv_sec;
+	}
 
   if ( doDisplay ) {
     emit self->updateDisplay();
@@ -952,25 +820,25 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
   }
 
   if ( output && self->recordingInProgress ) {
-    if ( config.limitEnabled ) {
+    if ( commonConfig.limitEnabled ) {
       int finished = 0;
       float percentage = 0;
       int frames = output->getFrameCount();
-      switch ( config.limitType ) {
+      switch ( commonConfig.limitType ) {
         case 0: // FIX ME -- nasty magic number
           // start and current times here are in ms, but the limit value is in
           // secs, so rather than ( current - start ) / time * 100 to get the
           // %age, we do ( current - start ) / time / 10
           percentage = ( now - state->captureWidget->recordingStartTime ) /
-              ( config.secondsLimitValue * 1000.0 +
+              ( commonConfig.secondsLimitValue * 1000.0 +
               state->captureWidget->totalTimePaused ) * 100.0;
           if ( now > state->captureWidget->recordingEndTime ) {
             finished = 1;
           }
           break;
         case 1: // FIX ME -- nasty magic number
-          percentage = ( 100.0 * frames ) / config.framesLimitValue;
-          if ( frames >= config.framesLimitValue ) {
+          percentage = ( 100.0 * frames ) / commonConfig.framesLimitValue;
+          if ( frames >= commonConfig.framesLimitValue ) {
             finished = 1;
           }
           break;
@@ -990,7 +858,7 @@ PreviewWidget::updatePreview ( void* args, void* imageData, int length )
           // that the GUI changes it makes must be done indirectly
           // FIX ME -- doing it with invokeMethod would be nicer though
           if ( state->captureWidget->singleAutorunFinished()) {
-            state->autorunStartNext = now + 1000 * config.autorunDelay;
+            state->autorunStartNext = now + 1000 * autorunConf.autorunDelay;
           }
         }
       } else {
@@ -1035,6 +903,18 @@ PreviewWidget::reduceTo8Bit ( void* sourceData, void* targetData, int xSize,
           break;
         case OA_DEMOSAIC_GBRG:
           outputFormat = OA_PIX_FMT_GBRG8;
+          break;
+        case OA_DEMOSAIC_CMYG:
+          outputFormat = OA_PIX_FMT_CMYG8;
+          break;
+        case OA_DEMOSAIC_MCGY:
+          outputFormat = OA_PIX_FMT_MCGY8;
+          break;
+        case OA_DEMOSAIC_YGCM:
+          outputFormat = OA_PIX_FMT_YGCM8;
+          break;
+        case OA_DEMOSAIC_GYMC:
+          outputFormat = OA_PIX_FMT_GYMC8;
           break;
       }
     } else {

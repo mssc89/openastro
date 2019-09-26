@@ -2,7 +2,8 @@
  *
  * FC2controller.c -- Main camera controller thread
  *
- * Copyright 2015,2016,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -37,6 +38,7 @@
 #include "FC2.h"
 #include "FC2oacam.h"
 #include "FC2state.h"
+#include "FC2private.h"
 
 
 static int	_processSetControl ( FC2_STATE*, OA_COMMAND* );
@@ -100,10 +102,10 @@ oacamFC2controller ( void* param )
           case OA_CMD_ROI_SET:
             resultCode = _processSetROI ( camera, command );
             break;
-          case OA_CMD_START:
+          case OA_CMD_START_STREAMING:
             resultCode = _processStreamingStart ( cameraInfo, command );
             break;
-          case OA_CMD_STOP:
+          case OA_CMD_STOP_STREAMING:
             resultCode = _processStreamingStop ( cameraInfo, command );
             break;
 /*
@@ -137,9 +139,10 @@ oacamFC2controller ( void* param )
 void
 _FC2FrameCallback ( fc2Image *frame, void *ptr )
 {
-  FC2_STATE*    cameraInfo = ptr;
-  int           buffersFree, nextBuffer;
-  unsigned int  dataLength;
+  FC2_STATE*				cameraInfo = ptr;
+  int								buffersFree, nextBuffer;
+  unsigned int			dataLength;
+	fc2ImageMetadata	metadata;
 
   pthread_mutex_lock ( &cameraInfo->callbackQueueMutex );
   buffersFree = cameraInfo->buffersFree;
@@ -150,6 +153,14 @@ _FC2FrameCallback ( fc2Image *frame, void *ptr )
       dataLength = cameraInfo->imageBufferLength;
     }
     nextBuffer = cameraInfo->nextBuffer;
+		if ( !cameraInfo->haveFrameCounter || p_fc2GetImageMetadata ( frame,
+				&metadata ) != FC2_ERROR_OK ) {
+			cameraInfo->metadataBuffers[ nextBuffer ].frameCounterValid = 0;
+		} else {
+			cameraInfo->metadataBuffers[ nextBuffer ].frameCounter =
+					metadata.embeddedFrameCounter;
+			cameraInfo->metadataBuffers[ nextBuffer ].frameCounterValid = 1;
+		}
     ( void ) memcpy ( cameraInfo->buffers[ nextBuffer ].start, frame->pData,
         dataLength );
     cameraInfo->frameCallbacks[ nextBuffer ].callbackType =
@@ -160,6 +171,8 @@ _FC2FrameCallback ( fc2Image *frame, void *ptr )
         cameraInfo->streamingCallback.callbackArg;
     cameraInfo->frameCallbacks[ nextBuffer ].buffer =
         cameraInfo->buffers[ nextBuffer ].start;
+    cameraInfo->frameCallbacks[ nextBuffer ].metadata =
+        &( cameraInfo->metadataBuffers[ nextBuffer ]);
     cameraInfo->frameCallbacks[ nextBuffer ].bufferLen = dataLength;
     pthread_mutex_lock ( &cameraInfo->callbackQueueMutex );
     oaDLListAddToTail ( cameraInfo->callbackQueue,
@@ -237,27 +250,15 @@ _processSetControl ( FC2_STATE* cameraInfo, OA_COMMAND* command )
 
   if ( found == 2 || found == 3 ) { // auto or on/off
     uint32_t val_u32;
-    if ( OA_CAM_CTRL_MODE_AUTO ( OA_CAM_CTRL_EXPOSURE_UNSCALED ) == control ||
-        OA_CAM_CTRL_MODE_AUTO ( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) == control ) {
-      if ( OA_CTRL_TYPE_BOOLEAN != val->valueType ) {
-        fprintf ( stderr, "%s: invalid control type %d where bool expected\n",
-            __FUNCTION__, val->valueType );
-        return -OA_ERR_INVALID_CONTROL_TYPE;
-      }
-      val_u32 = val->boolean;
-      if ( val_u32 != OA_EXPOSURE_AUTO && val_u32 != OA_EXPOSURE_MANUAL ) {
-        fprintf ( stderr, "%s: control value out of range\n", __FUNCTION__ );
-        return -OA_ERR_OUT_OF_RANGE;
-      }
-      val_u32 = ( OA_EXPOSURE_AUTO == val_u32 ) ? 1 : 0;
-    } else {
-      // anything here should be a boolean value
-      if ( OA_CTRL_TYPE_BOOLEAN != val->valueType ) {
-        fprintf ( stderr, "%s: invalid control type %d where bool expected\n",
-            __FUNCTION__, val->valueType );
-        return -OA_ERR_INVALID_CONTROL_TYPE;
-      }
-      val_u32 = val->boolean;
+    if ( OA_CTRL_TYPE_BOOLEAN != val->valueType ) {
+      fprintf ( stderr, "%s: invalid control type %d where bool expected\n",
+          __FUNCTION__, val->valueType );
+      return -OA_ERR_INVALID_CONTROL_TYPE;
+    }
+    val_u32 = val->boolean;
+    if ( val_u32 > 1 ) {
+      fprintf ( stderr, "%s: control value out of range\n", __FUNCTION__ );
+      return -OA_ERR_OUT_OF_RANGE;
     }
 
     // I think the best way to do this is to read the current setting, then
@@ -269,9 +270,9 @@ _processSetControl ( FC2_STATE* cameraInfo, OA_COMMAND* command )
       return -OA_ERR_CAMERA_IO;
     }
     if ( found == 2 ) {
-      property.autoManualMode = val_u32 ? 1 : 0;
+      property.autoManualMode = val_u32;
     } else {
-      property.onOff = val_u32 ? 1 : 0;
+      property.onOff = val_u32;
     }
     if (( *p_fc2SetProperty )( cameraInfo->pgeContext, &property ) !=
         FC2_ERROR_OK ) {
@@ -431,38 +432,31 @@ _processGetControl ( FC2_STATE* cameraInfo, OA_COMMAND* command )
     }
   }
 
+	if ( OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_UNSCALED ) == control ||
+			OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) == control ||
+			OA_CAM_CTRL_EXPOSURE_UNSCALED == control ) {
+		found = 1;
+		pgeControl = FC2_SHUTTER;
+	}
+
   if ( found ) {
-    if ( pgeControl != FC2_SHUTTER ||
-        OA_CAM_CTRL_EXPOSURE_UNSCALED == control ||
-        OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_UNSCALED ) == control ||
-        OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) == control ) {
-      property.type = pgeControl;
-      if (( *p_fc2GetProperty )( cameraInfo->pgeContext, &property ) !=
-          FC2_ERROR_OK ) {
-        fprintf ( stderr, "Can't get FC2 control %d\n", pgeControl );
-        return -OA_ERR_CAMERA_IO;
-      }
-      if ( !oaIsAuto ( control )) {
-        if ( pgeControl != FC2_TEMPERATURE ) {
-          val->valueType = OA_CTRL_TYPE_INT32;
-          val->int32 = property.valueA;
-        } else {
-          val->valueType = OA_CTRL_TYPE_READONLY;
-          val->int32 = property.valueA / 10;
-        }
+    property.type = pgeControl;
+    if (( *p_fc2GetProperty )( cameraInfo->pgeContext, &property ) !=
+        FC2_ERROR_OK ) {
+      fprintf ( stderr, "Can't get FC2 control %d\n", pgeControl );
+      return -OA_ERR_CAMERA_IO;
+    }
+    if ( !oaIsAuto ( control )) {
+      if ( pgeControl != FC2_TEMPERATURE ) {
+        val->valueType = OA_CTRL_TYPE_INT32;
+        val->int32 = property.valueA;
       } else {
-        if ( OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) ==
-            control || OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_UNSCALED )
-            == control ) {
-          // FIX ME -- should this be DISCRETE?
-          val->valueType = OA_CTRL_TYPE_INT32;
-          val->int32 = ( property.autoManualMode ) ?  OA_EXPOSURE_AUTO :
-              OA_EXPOSURE_MANUAL;
-        } else {
-          val->valueType = OA_CTRL_TYPE_BOOLEAN;
-          val->boolean = property.autoManualMode;
-        }
+        val->valueType = OA_CTRL_TYPE_READONLY;
+        val->int32 = property.valueA / 10;
       }
+    } else {
+      val->valueType = OA_CTRL_TYPE_BOOLEAN;
+      val->boolean = property.autoManualMode ? 1 : 0;
     }
     return OA_ERR_NONE;
   }
@@ -483,6 +477,20 @@ _processGetControl ( FC2_STATE* cameraInfo, OA_COMMAND* command )
     return OA_ERR_NONE;
   }
 
+	if ( OA_CAM_CTRL_BINNING == control ) {
+		int		xbin, ybin;
+
+	  if (( *p_fc2GetGigEImageBinningSettings )( cameraInfo->pgeContext, &xbin,
+				&ybin ) != FC2_ERROR_OK ) {
+			fprintf ( stderr, "Can't get binning state\n" );
+			return -OA_ERR_CAMERA_IO;
+		}
+
+		val->valueType = OA_CTRL_TYPE_INT32;
+		val->int32 = xbin;
+		return OA_ERR_NONE;
+  }
+
   fprintf ( stderr, "Unrecognised control %d in %s\n", control, __FUNCTION__ );
 
   return -OA_ERR_INVALID_CONTROL;
@@ -494,6 +502,7 @@ _processSetResolution ( FC2_STATE* cameraInfo, OA_COMMAND* command )
 {
   FRAMESIZE*			size = command->commandData;
   unsigned int			binMode, s, mode, restart = 0;
+	fc2GigEImageSettingsInfo	imageInfo;
   fc2GigEImageSettings		settings;
   int				found;
 
@@ -503,9 +512,10 @@ _processSetResolution ( FC2_STATE* cameraInfo, OA_COMMAND* command )
 
   found = -1;
   binMode = cameraInfo->binMode;
-  for ( s = 0; s < cameraInfo->frameSizes[ binMode ].numSizes; s++ ) {
-    if ( cameraInfo->frameSizes[ binMode ].sizes[ s ].x == size->x &&
-        cameraInfo->frameSizes[ binMode ].sizes[ s ].y == size->y ) {
+  for ( s = 0; s < cameraInfo->frameSizes[ binMode ].numSizes && found < 0;
+			s++ ) {
+    if ( cameraInfo->frameSizes[ binMode ].sizes[ s ].x >= size->x &&
+        cameraInfo->frameSizes[ binMode ].sizes[ s ].y >= size->y ) {
       found = s;
       break;
     }
@@ -518,6 +528,12 @@ _processSetResolution ( FC2_STATE* cameraInfo, OA_COMMAND* command )
 
   mode = cameraInfo->frameModes[ binMode ][ found ].mode;
 
+  if (( *p_fc2GetGigEImageSettingsInfo )( cameraInfo->pgeContext,
+      &imageInfo ) != FC2_ERROR_OK ) {
+    fprintf ( stderr, "Can't get image settings info\n" );
+    return -OA_ERR_CAMERA_IO;
+  }
+
   if (( *p_fc2GetGigEImageSettings )( cameraInfo->pgeContext, &settings ) !=
       FC2_ERROR_OK ) {
     fprintf ( stderr, "Can't get FC2 image settings\n" );
@@ -525,8 +541,8 @@ _processSetResolution ( FC2_STATE* cameraInfo, OA_COMMAND* command )
   }
   settings.width = size->x;
   settings.height = size->y;
-  settings.offsetX = 0;
-  settings.offsetY = 0;
+  settings.offsetX = ( imageInfo.maxWidth - size->x ) / 2;
+  settings.offsetY = ( imageInfo.maxHeight - size->y ) / 2;
 
   if ( cameraInfo->isStreaming ) {
     restart = 1;
@@ -582,7 +598,7 @@ _processSetROI ( oaCamera* camera, OA_COMMAND* command )
   fc2GigEImageSettings		settings;
   int				ret, restart = 0;
 
-  if ( !camera->features.ROI ) {
+  if (!( camera->features.flags & OA_CAM_FEATURE_ROI )) {
     return -OA_ERR_INVALID_CONTROL;
   }
 
@@ -825,7 +841,6 @@ _processSetTriggerControl ( FC2_STATE* cameraInfo, OA_COMMAND* command,
       cameraInfo->triggerCurrentPolarity = val->menu;
       break;
   }
-
   if ( OA_CAM_CTRL_TRIGGER_ENABLE == control || cameraInfo->triggerEnabled ||
       !cameraInfo->triggerEnable ) {
     OA_CLEAR ( triggerMode );
@@ -997,6 +1012,8 @@ _processSetStrobeControl ( FC2_STATE* cameraInfo, OA_COMMAND* command,
       break;
   }
 
+	// strobeEnable means the strobe can be switched on and off
+	// strobeEnabled means we want to switch it on
   if ( OA_CAM_CTRL_STROBE_ENABLE == control || cameraInfo->strobeEnabled ||
       !cameraInfo->strobeEnable ) {
     OA_CLEAR ( strobeControl );
@@ -1036,8 +1053,8 @@ _doBinning ( FC2_STATE* cameraInfo, int binMode )
 
   found = -1;
   for ( s = 0; s < cameraInfo->frameSizes[ binMode ].numSizes; s++ ) {
-    if ( cameraInfo->frameSizes[ binMode ].sizes[ s ].x == newX &&
-        cameraInfo->frameSizes[ binMode ].sizes[ s ].y == newY ) {
+    if ( cameraInfo->frameSizes[ binMode ].sizes[ s ].x >= newX &&
+        cameraInfo->frameSizes[ binMode ].sizes[ s ].y >= newY ) {
       found = s;
       break;
     }
@@ -1087,7 +1104,7 @@ static int
 _doFrameFormat ( FC2_STATE* cameraInfo, int format )
 {
   fc2GigEImageSettings	settings;
-  int			restart;
+  int			restart = 0;
 
   if (( *p_fc2GetGigEImageSettings )( cameraInfo->pgeContext, &settings ) !=
       FC2_ERROR_OK ) {

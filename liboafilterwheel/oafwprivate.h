@@ -2,7 +2,7 @@
  *
  * oafwprivate.h -- shared declarations not exposed to the cruel world
  *
- * Copyright 2014,2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -34,13 +34,14 @@
 #include <libftdi1/ftdi.h>
 #endif
 #endif
+#include <hidapi.h>
 
 #include <openastro/controller.h>
 
 #define OA_CLEAR(x)	memset ( &(x), 0, sizeof ( x ))
 
 typedef struct {
-  oaFilterWheelDevice** wheelList;
+  oaFilterWheelDevice**	wheelList;
   unsigned int          numFilterWheels;
   unsigned int          maxFilterWheels;
 } FILTERWHEEL_LIST;
@@ -82,5 +83,11 @@ extern void		oafwAddDebugLevel ( int );
 extern void		oafwDebugMsg ( int, const char*, ... );
 extern int		_oaCheckFilterWheelArraySize ( FILTERWHEEL_LIST* );
 extern void		_oaFreeFilterWheelDeviceList ( FILTERWHEEL_LIST* );
+
+extern int		oaWheelSetControl ( oaFilterWheel*, int, oaControlValue* );
+extern int		oaWheelReadControl ( oaFilterWheel*, int, oaControlValue* );
+extern int		oaWheelTestControl ( oaFilterWheel*, int, oaControlValue* );
+
+extern void*	oafwCallbackHandler ( void* );
 
 #endif /* OA_FWHEEL_PRIVATE_H */

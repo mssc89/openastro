@@ -23,6 +23,8 @@
 # <http://www.gnu.org/licenses/>.
 #
 
+set -e
+
 export DEBEMAIL=james@openastro.org
 export DEBFULLNAME="James Fidell"
 
@@ -32,15 +34,29 @@ srcdir=oacapture-$version
 debdir=debian
 debsrc=$debdir/source
 
+debversion=`cat /etc/debian_version`
+case $debversion in
+  jessie/sid)
+    compatversion=9
+    ;;
+  stretch/sid)
+    compatversion=9
+    ;;
+  *)
+    compatversion=10
+    ;;
+esac
+echo $compatversion > debfiles/compat
+
 tar jxf oacapture-$version.tar.bz2
 cd $srcdir
 dh_make -y -s -f ../oacapture-$version.tar.bz2
 
-cp ../debfiles/control $debdir
+sed -e "s/@@COMPAT@@/$compatversion/" < ../debfiles/control > $debdir/control
 cp ../debfiles/copyright $debdir
+cp ../debfiles/compat $debdir
 cp ../debfiles/changelog $debdir
 cp ../debfiles/oacapture.menu $debdir
-echo 9 >> $debdir/compat
 sed -e '/purge\|remove/a\
       service udev restart' < $debdir/postinst.ex > $debdir/postinst
 chmod +x $debdir/postinst
@@ -50,25 +66,41 @@ chmod +x $debdir/postrm
 echo "3.0 (quilt)" > $debsrc/format
 cat ../debfiles/rules.overrides >> $debdir/rules
 
-dpkg-query -l cfitsio-dev 2>&1 >/dev/null
-if [ $? -eq 0 ]; then
+if dpkg-query -l cfitsio-dev 2>&1 >/dev/null; then
   cp $debdir/control $debdir/control.orig
   sed -e 's/libcfitsio-dev/cfitsio-dev/g' < $debdir/control.orig > $debdir/control
   rm $debdir/control.orig
 fi
 
-dpkg-query -l libhidapi-dev 2>&1 >/dev/null
-if [ $? -ne 0 ]; then
+if dpkg-query -l libhidapi-dev 2>&1 >/dev/null; then
   cp $debdir/control $debdir/control.orig
   sed -e 's/, libhidapi-dev//g' < $debdir/control.orig > $debdir/control
   rm $debdir/control.orig
 fi
 
-export QUILT_PATCHES="debian/patches"
-export QUILT_PATCH_OPTS="--reject-format=unified"
-export QUILT_DIFF_ARGS="-p ab --no-timestamps --no-index --color=auto"
-export QUILT_REFRESH_ARGS="-p ab --no-timestamps --no-index"
-mkdir -p $QUILT_PATCHES
+case $debversion in
+  jessie/sid|stretch/sid|8.*)
+    export QUILT_PATCHES="debian/patches"
+    export QUILT_PATCH_OPTS="--reject-format=unified"
+    export QUILT_DIFF_ARGS="-p ab --no-timestamps --no-index --color=auto"
+    export QUILT_REFRESH_ARGS="-p ab --no-timestamps --no-index"
+    mkdir -p $QUILT_PATCHES
+
+    for p in `ls -1 ../debfiles/patches`
+    do
+      quilt --quiltrc=$quiltconf new $p
+      for f in `egrep '^\+\+\+' ../debfiles/patches/$p | awk '{ print $2; }'`
+      do
+        quilt --quiltrc=$quiltconf add $f
+      done
+    pwd
+      patch -p0 < ../debfiles/patches/$p
+      quilt --quiltrc=$quiltconf refresh
+    done
+  ;;
+  *)
+  ;;
+esac
 
 test -f $debdir/README.Debian && rm $debdir/README.Debian
 test -f $debdir/README.Debian && rm $debdir/README.Debian

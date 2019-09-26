@@ -2,7 +2,7 @@
  *
  * SXcontroller.c -- Main camera controller thread
  *
- * Copyright 2015,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -49,7 +49,7 @@ static int	_doReadExposure ( SX_STATE* );
 
 static int	_clearFrame ( SX_STATE*, unsigned int );
 static int	_latchFrame ( SX_STATE*, unsigned int, unsigned int,
-			unsigned int );
+			unsigned int, unsigned int, unsigned int );
 static int	_readFrame ( SX_STATE*, unsigned char*, int );
 static int	_readTemperature ( SX_STATE* );
 
@@ -99,10 +99,10 @@ oacamSXcontroller ( void* param )
           case OA_CMD_RESOLUTION_SET:
             resultCode = _processSetResolution ( camera, command );
             break;
-          case OA_CMD_START:
+          case OA_CMD_START_STREAMING:
             resultCode = _processStreamingStart ( camera, command );
             break;
-          case OA_CMD_STOP:
+          case OA_CMD_STOP_STREAMING:
             resultCode = _processStreamingStop ( cameraInfo, command );
             break;
           default:
@@ -149,28 +149,28 @@ oacamSXcontroller ( void* param )
           pthread_mutex_unlock ( &cameraInfo->commandQueueMutex );
           if ( buffersFree && streaming ) {
             nextBuffer = cameraInfo->nextBuffer;
-            if ( cameraInfo->isInterlaced && OA_BIN_MODE_NONE ==
-                cameraInfo->binMode ) {
+            if ( cameraInfo->isInterlaced ) {
+							if ( OA_BIN_MODE_NONE == cameraInfo->binMode ) {
+								rowLength = cameraInfo->xImageSize * cameraInfo->bytesPerPixel;
+								numRows = cameraInfo->yImageSize / 2;
+								halfFrameSize = rowLength * numRows;
+								evenFrame = cameraInfo->xferBuffer;
+								oddFrame = cameraInfo->xferBuffer + halfFrameSize;
 
-              rowLength = cameraInfo->xSize * cameraInfo->bytesPerPixel;
-              numRows = cameraInfo->ySize / 2;
-              halfFrameSize = rowLength * numRows;
-              evenFrame = cameraInfo->xferBuffer;
-              oddFrame = cameraInfo->xferBuffer + halfFrameSize;
-
-              tgt = cameraInfo->buffers[ nextBuffer ].start;
-              for ( i = 0; i < numRows; i++ ) {
-                memcpy ( tgt, oddFrame, rowLength );
-                tgt += rowLength;
-                oddFrame += rowLength;
-                memcpy ( tgt, evenFrame, rowLength );
-                tgt += rowLength;
-                evenFrame += rowLength;
-              }
-            } else {
-              memcpy ( cameraInfo->buffers[ nextBuffer ].start,
-                  cameraInfo->xferBuffer, cameraInfo->imageBufferLength );
-            }
+								tgt = cameraInfo->buffers[ nextBuffer ].start;
+								for ( i = 0; i < numRows; i++ ) {
+									memcpy ( tgt, oddFrame, rowLength );
+									tgt += rowLength;
+									oddFrame += rowLength;
+									memcpy ( tgt, evenFrame, rowLength );
+									tgt += rowLength;
+									evenFrame += rowLength;
+								}
+							} else {
+								memcpy ( cameraInfo->buffers[ nextBuffer ].start,
+										cameraInfo->xferBuffer, cameraInfo->actualImageLength );
+							}
+						}
             cameraInfo->frameCallbacks[ nextBuffer ].callbackType =
                 OA_CALLBACK_NEW_FRAME;
             cameraInfo->frameCallbacks[ nextBuffer ].callback =
@@ -180,7 +180,7 @@ oacamSXcontroller ( void* param )
             cameraInfo->frameCallbacks[ nextBuffer ].buffer =
                 cameraInfo->buffers[ nextBuffer ].start;
             cameraInfo->frameCallbacks[ nextBuffer ].bufferLen =
-                cameraInfo->imageBufferLength;
+								cameraInfo->actualImageLength;
             pthread_mutex_lock ( &cameraInfo->callbackQueueMutex );
             oaDLListAddToTail ( cameraInfo->callbackQueue,
                 &cameraInfo->frameCallbacks[ nextBuffer ]);
@@ -229,7 +229,24 @@ _processSetControl ( SX_STATE* cameraInfo, OA_COMMAND* command )
             "expected\n", __FUNCTION__, val->valueType );
         return -OA_ERR_INVALID_CONTROL_TYPE;
       }
-      cameraInfo->binMode = val->discrete;
+			if ( val->discrete == OA_BIN_MODE_NONE ||
+					val->discrete == OA_BIN_MODE_2x2 ) {
+				cameraInfo->binMode = val->discrete;
+				switch ( val->discrete ) {
+					case OA_BIN_MODE_NONE:
+						cameraInfo->xImageSize = cameraInfo->xSubframeSize;
+						cameraInfo->yImageSize = cameraInfo->ySubframeSize;
+						break;
+					case OA_BIN_MODE_2x2:
+						cameraInfo->xImageSize = cameraInfo->xSubframeSize / 2;
+						cameraInfo->yImageSize = cameraInfo->ySubframeSize / 2;
+						break;
+				}
+				cameraInfo->actualImageLength = cameraInfo->xImageSize *
+						cameraInfo->yImageSize * cameraInfo->bytesPerPixel;
+			} else {
+				return -OA_ERR_OUT_OF_RANGE;
+			}
       break;
 
     default:
@@ -292,12 +309,17 @@ _processSetResolution ( oaCamera* camera, OA_COMMAND* command )
   SX_STATE*	cameraInfo = camera->_private;
   FRAMESIZE*	size = command->commandData;
 
-  cameraInfo->xSize = size->x;
-  cameraInfo->ySize = size->y;
+  cameraInfo->xImageSize = size->x;
+  cameraInfo->yImageSize = size->y;
+	cameraInfo->xSubframeSize = cameraInfo->xImageSize * cameraInfo->binMode;
+	cameraInfo->ySubframeSize = cameraInfo->yImageSize * cameraInfo->binMode;
+	cameraInfo->xSubframeOffset = ( cameraInfo->maxResolutionX -
+			cameraInfo->xSubframeSize ) / 2;
+	cameraInfo->ySubframeOffset = ( cameraInfo->maxResolutionY -
+			cameraInfo->ySubframeSize ) / 2;
 
-  cameraInfo->imageBufferLength = size->x * size->y *
-      cameraInfo->bytesPerPixel;
-
+  cameraInfo->actualImageLength = cameraInfo->xImageSize *
+			cameraInfo->yImageSize * cameraInfo->bytesPerPixel;
   return OA_ERR_NONE;
 }
 
@@ -357,8 +379,9 @@ _processStreamingStop ( SX_STATE* cameraInfo, OA_COMMAND* command )
 static int
 _doStartExposure ( SX_STATE* cameraInfo )
 {
-  if ( cameraInfo->isInterlaced ) {
+  if ( cameraInfo->isInterlaced && cameraInfo->binMode == OA_BIN_MODE_NONE ) {
     _clearFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_EVEN );
+		// FIX ME -- arbitrary figure here?
     usleep ( 100 );
     _clearFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_ODD );
   } else {
@@ -380,27 +403,33 @@ _doReadExposure ( SX_STATE* cameraInfo )
  
   usleep ( 3000 );
 
-  if ( cameraInfo->isInterlaced && OA_BIN_MODE_NONE == cameraInfo->binMode ) {
+  if ( cameraInfo->isInterlaced ) {
+		if ( OA_BIN_MODE_NONE == cameraInfo->binMode ) {
+			rowLength = cameraInfo->xImageSize * cameraInfo->bytesPerPixel;
+			numRows = cameraInfo->yImageSize / 2;
+			halfFrameSize = rowLength * numRows;
+			evenFrame = cameraInfo->xferBuffer;
+			oddFrame = cameraInfo->xferBuffer + halfFrameSize;
 
-    rowLength = cameraInfo->xSize * cameraInfo->bytesPerPixel;
-    numRows = cameraInfo->ySize / 2;
-    halfFrameSize = rowLength * numRows;
-    evenFrame = cameraInfo->xferBuffer;
-    oddFrame = cameraInfo->xferBuffer + halfFrameSize;
-
-    _latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_EVEN, cameraInfo->xSize,
-        numRows );
-    _readFrame ( cameraInfo, evenFrame, halfFrameSize );
-    _latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_ODD, cameraInfo->xSize,
-        numRows );
-    _readFrame ( cameraInfo, oddFrame, halfFrameSize );
-
-  } else {
-    _latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_BOTH, cameraInfo->xSize,
-        cameraInfo->ySize );
-    _readFrame ( cameraInfo, cameraInfo->xferBuffer,
-        cameraInfo->imageBufferLength );
-  }
+			_latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_EVEN,
+					cameraInfo->xImageSize, numRows, cameraInfo->xSubframeOffset,
+					cameraInfo->ySubframeOffset );
+			_readFrame ( cameraInfo, evenFrame, halfFrameSize );
+			_latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_ODD,
+					cameraInfo->xImageSize, numRows, cameraInfo->xSubframeOffset,
+					cameraInfo->ySubframeOffset );
+			_readFrame ( cameraInfo, oddFrame, halfFrameSize );
+		} else {
+			_latchFrame ( cameraInfo, CCD_EXP_FLAGS_FIELD_BOTH,
+					cameraInfo->xSubframeSize, cameraInfo->ySubframeSize / 2,
+					cameraInfo->xSubframeOffset, cameraInfo->ySubframeOffset /
+					cameraInfo->binMode );
+			_readFrame ( cameraInfo, cameraInfo->xferBuffer,
+					cameraInfo->actualImageLength );
+		}
+	} else {
+		fprintf ( stderr, "trying to read non-interlaced camera?!\n" );
+	}
   return OA_ERR_NONE;
 }
 
@@ -462,7 +491,7 @@ _clearFrame ( SX_STATE* cameraInfo, unsigned int flags )
 
 static int
 _latchFrame ( SX_STATE* cameraInfo, unsigned int flags, unsigned int x,
-    unsigned int y )
+    unsigned int y, unsigned int xoff, unsigned int yoff )
 {
   unsigned char	buff [ SXUSB_READ_BUFSIZE ];
   int		ret, transferred, xbin, ybin;
@@ -483,10 +512,10 @@ _latchFrame ( SX_STATE* cameraInfo, unsigned int flags, unsigned int x,
   buff[ SXUSB_REQ_INDEX_H ] = 0;
   buff[ SXUSB_REQ_LENGTH_L ] = 10;
   buff[ SXUSB_REQ_LENGTH_H ] = 0;
-  buff[ SXUSB_REQ_DATA + 0] = 0;
-  buff[ SXUSB_REQ_DATA + 1] = 0;
-  buff[ SXUSB_REQ_DATA + 2] = 0;
-  buff[ SXUSB_REQ_DATA + 3] = 0;
+  buff[ SXUSB_REQ_DATA + 0] = xoff & 0xff;
+  buff[ SXUSB_REQ_DATA + 1] = ( xoff >> 8 ) & 0xff;
+  buff[ SXUSB_REQ_DATA + 2] = yoff & 0xff;
+  buff[ SXUSB_REQ_DATA + 3] = ( yoff >> 8 ) & 0xff;
   buff[ SXUSB_REQ_DATA + 4] = x & 0xff;
   buff[ SXUSB_REQ_DATA + 5] = ( x >> 8 ) & 0xff;
   buff[ SXUSB_REQ_DATA + 6] = y & 0xff;
@@ -512,18 +541,24 @@ _readFrame ( SX_STATE* cameraInfo, unsigned char* buffer, int length )
   int		transferred;
   int		ret;
 
-  if (( ret = libusb_bulk_transfer ( cameraInfo->usbHandle,
-      SXUSB_BULK_ENDP_IN, buffer, length, &transferred,
-      SXUSB_FRAME_TIMEOUT ))) {
-    fprintf ( stderr, "receive READ for SX failed: ret = %d, "
-        "transferred = %d of %d\n", ret, transferred, length );
-    return -OA_ERR_CAMERA_IO;
-  }
-  if ( length != transferred ) {
-    fprintf ( stderr, "length %d != transferred %d in %s\n", length,
-        transferred, __FUNCTION__ );
-    return -OA_ERR_CAMERA_IO;
-  }
+	while ( length ) {
+		if (( ret = libusb_bulk_transfer ( cameraInfo->usbHandle,
+				SXUSB_BULK_ENDP_IN, buffer, length, &transferred,
+				SXUSB_FRAME_TIMEOUT ))) {
+			fprintf ( stderr, "receive READ for SX failed: ret = %d, "
+					"transferred = %d of %d\n", ret, transferred, length );
+			return -OA_ERR_CAMERA_IO;
+		}
+		/*
+		if ( length != transferred ) {
+			fprintf ( stderr, "length %d != transferred %d in %s\n", length,
+					transferred, __FUNCTION__ );
+			return -OA_ERR_CAMERA_IO;
+		}
+		 */
+		length -= transferred;
+		buffer += transferred;
+	}
   return OA_ERR_NONE;
 }
 

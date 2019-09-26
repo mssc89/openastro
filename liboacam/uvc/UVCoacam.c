@@ -2,7 +2,8 @@
  *
  * UVCoacam.c -- main entrypoint for UVC Cameras
  *
- * Copyright 2013,2014,2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -34,10 +35,12 @@
 #include "oacamprivate.h"
 #include "unimplemented.h"
 #include "UVCoacam.h"
+#include "UVCprivate.h"
 
 
 int
-oaUVCGetCameras ( CAMERA_LIST* deviceList, int flags )
+oaUVCGetCameras ( CAMERA_LIST* deviceList, unsigned long featureFlags,
+		int flags )
 {
   unsigned int			numFound = 0, numUVCDevices = 0, i;
   unsigned int  	        index;
@@ -50,47 +53,51 @@ oaUVCGetCameras ( CAMERA_LIST* deviceList, int flags )
   oaCameraDevice*		dev;
   DEVICE_INFO*			_private;
 
-  if ( uvc_init ( &ctx, 0 ) != UVC_SUCCESS ) {
+	if (( ret = _uvcInitLibraryFunctionPointers()) != OA_ERR_NONE ) {
+		return ret;
+	}
+
+  if ( p_uvc_init ( &ctx, 0 ) != UVC_SUCCESS ) {
     fprintf ( stderr, "uvc_init failed\n" );
     return -OA_ERR_SYSTEM_ERROR;
   }
 
-  if ( uvc_get_device_list ( ctx, &devlist ) != UVC_SUCCESS ) {
+  if ( p_uvc_get_device_list ( ctx, &devlist ) != UVC_SUCCESS ) {
     fprintf ( stderr, "uvc_get_device_list failed\n" );
     return -OA_ERR_SYSTEM_ERROR;
   }
   while ( devlist[numUVCDevices] ) { numUVCDevices++; }
   if ( numUVCDevices < 1 ) {
-    uvc_free_device_list ( devlist, 1 );
-    uvc_exit ( ctx );
+    p_uvc_free_device_list ( devlist, 1 );
+    p_uvc_exit ( ctx );
     return 0;
   }
 
   for ( i = 0; i < numUVCDevices; i++ ) {
     device = devlist[i];
-    if ( uvc_get_device_descriptor ( device, &desc )) {
-      uvc_free_device_list ( devlist, 1 );
-      uvc_exit ( ctx );
+    if ( p_uvc_get_device_descriptor ( device, &desc )) {
+      p_uvc_free_device_list ( devlist, 1 );
+      p_uvc_exit ( ctx );
       return -OA_ERR_SYSTEM_ERROR;
     }
-    busNum = uvc_get_bus_number ( device );
-    addr = uvc_get_device_address ( device );
+    busNum = p_uvc_get_bus_number ( device );
+    addr = p_uvc_get_device_address ( device );
     index = ( busNum << 8 ) | addr;
 
     // fprintf ( stderr, "found %s %s camera at %d, %d\n", desc->manufacturer ? desc->manufacturer : "unknown", desc->product ? desc->product: "unknown", busNum, addr );
     // now we can drop the data into the list
     if (!( dev = malloc ( sizeof ( oaCameraDevice )))) {
-      uvc_free_device_descriptor ( desc );
-      uvc_free_device_list ( devlist, 1 );
-      uvc_exit ( ctx );
+      p_uvc_free_device_descriptor ( desc );
+      p_uvc_free_device_list ( devlist, 1 );
+      p_uvc_exit ( ctx );
       return -OA_ERR_MEM_ALLOC;
     }
 
     if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
-      free ( dev );
-      uvc_free_device_descriptor ( desc );
-      uvc_free_device_list ( devlist, 1 );
-      uvc_exit ( ctx );
+      ( void ) free (( void* ) dev );
+      p_uvc_free_device_descriptor ( desc );
+      p_uvc_free_device_list ( devlist, 1 );
+      p_uvc_exit ( ctx );
       _oaFreeCameraDeviceList ( deviceList );
       return -OA_ERR_MEM_ALLOC;
     }
@@ -111,22 +118,21 @@ oaUVCGetCameras ( CAMERA_LIST* deviceList, int flags )
     dev->initCamera = oaUVCInitCamera;
     dev->hasLoadableFirmware = 0;
     if (( ret = _oaCheckCameraArraySize ( deviceList )) < 0 ) {
-      free ( dev );
-      free ( _private );
-      uvc_free_device_descriptor ( desc );
-      uvc_free_device_list ( devlist, 1 );
-      uvc_exit ( ctx );
-      _oaFreeCameraDeviceList ( deviceList );
+      ( void ) free (( void* ) dev );
+      ( void ) free (( void* ) _private );
+      p_uvc_free_device_descriptor ( desc );
+      p_uvc_free_device_list ( devlist, 1 );
+      p_uvc_exit ( ctx );
       return ret;
     }
     deviceList->cameraList[ deviceList->numCameras++ ] = dev;
     numFound++;
 
-    uvc_free_device_descriptor ( desc );
+    p_uvc_free_device_descriptor ( desc );
   }
 
-  uvc_free_device_list ( devlist, 1 );
-  uvc_exit ( ctx );
+  p_uvc_free_device_list ( devlist, 1 );
+  p_uvc_exit ( ctx );
   return numFound;
 }
 

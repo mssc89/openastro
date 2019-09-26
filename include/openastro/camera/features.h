@@ -2,7 +2,8 @@
  *
  * oacam-features.h -- camera API (sub)header for camera features
  *
- * Copyright 2014,2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2016,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,16 +29,27 @@
 #define OPENASTRO_CAMERA_FEATURES_H
 
 typedef struct oaCameraFeatures {
-  unsigned int rawMode : 1;
-  unsigned int demosaicMode : 1;
-  unsigned int binning : 1;
-  unsigned int frameRates : 1;
-  unsigned int ROI : 1;
-  unsigned int hasReset : 1;
-  unsigned int externalTrigger : 1;
-  unsigned int strobeOutput : 1;
+	unsigned long flags;
   unsigned int pixelSizeX;
   unsigned int pixelSizeY;
+	float readNoise;
+	float QE;
 } oaCameraFeatures;
+
+#define OA_CAM_FEATURE_NONE										0x00000000
+#define OA_CAM_FEATURE_RAW_MODE								0x00000001
+#define OA_CAM_FEATURE_DEMOSAIC_MODE					0x00000002
+#define OA_CAM_FEATURE_BINNING								0x00000004
+#define OA_CAM_FEATURE_FRAME_RATES						0x00000008
+#define OA_CAM_FEATURE_ROI										0x00000010
+#define OA_CAM_FEATURE_RESET									0x00000020
+#define OA_CAM_FEATURE_EXTERNAL_TRIGGER				0x00000040
+#define OA_CAM_FEATURE_STROBE_OUTPUT					0x00000080
+#define OA_CAM_FEATURE_FIXED_FRAME_SIZES			0x00000100
+#define OA_CAM_FEATURE_READABLE_CONTROLS			0x00000200
+#define OA_CAM_FEATURE_FIXED_READ_NOISE				0x00000400
+#define OA_CAM_FEATURE_STREAMING							0x00000800
+#define OA_CAM_FEATURE_SINGLE_SHOT						0x00001000
+#define OA_CAM_FEATURE_FRAME_SIZE_UNKNOWN			0x00002000
 
 #endif	/* OPENASTRO_CAMERA_FEATURES_H */

@@ -2,7 +2,7 @@
  *
  * oafw.c -- main filter wheel library entrypoint
  *
- * Copyright 2014,2015 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2018 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -41,26 +41,41 @@
 
 #include "xagylfw.h"
 #include "sxfw.h"
+#include "zwofw.h"
+#include "brightstarfw.h"
 
 oaInterface	oaFilterWheelInterfaces[] = {
   { 0, "", "", 0, OA_UDC_FLAG_NONE },
 #if defined(HAVE_LIBUDEV) || defined(HAVE_LIBFTDI)
-  { OA_FW_IF_XAGYL, "Xagyl", "Xagyl", oaXagylGetFilterWheels,
+  { OA_FW_IF_XAGYL, "Xagyl", "Xagyl", oaXagylGetFilterWheels, 0,
       OA_UDC_FLAG_USB_ALL },
 #else
-  { 0, "", "", 0, OA_UDC_FLAG_NONE },
+  { 0, "", "", 0, 0, OA_UDC_FLAG_NONE },
 #endif
-  { OA_FW_IF_SX, "Starlight Xpress", "SX", oaSXGetFilterWheels,
+  { OA_FW_IF_SX, "Starlight Xpress", "SX", oaSXGetFilterWheels, 0,
       OA_UDC_FLAG_NONE },
-  { 0, "", "", 0, OA_UDC_FLAG_NONE }
+#ifdef HAVE_LIBZWOFW
+  { OA_FW_IF_ZWO, "ZW Optical", "ZWO", oaZWOGetFilterWheels, 0,
+      OA_UDC_FLAG_NONE },
+#else
+  { 0, "", "", 0, 0, OA_UDC_FLAG_NONE },
+#endif
+#if defined(HAVE_LIBUDEV)
+  { OA_FW_IF_BRIGHTSTAR, "Brightstar", "Brightstar",
+			oaBrightstarGetFilterWheels, 0, OA_UDC_FLAG_NONE },
+#else
+  { 0, "", "", 0, 0, OA_UDC_FLAG_NONE },
+#endif
+  { 0, "", "", 0, 0, OA_UDC_FLAG_NONE }
 };
   
+
+static FILTERWHEEL_LIST	list;
 
 int
 oaGetFilterWheels( oaFilterWheelDevice*** deviceList )
 {
   int			i, err;
-  FILTERWHEEL_LIST	list;
 
   list.wheelList = 0;
   list.numFilterWheels = list.maxFilterWheels = 0;
@@ -68,13 +83,33 @@ oaGetFilterWheels( oaFilterWheelDevice*** deviceList )
   for ( i = 0; i < OA_FW_IF_COUNT; i++ ) {
     if ( oaFilterWheelInterfaces[i].interfaceType ) {
       if (( err = oaFilterWheelInterfaces[i].enumerate ( &list )) < 0 ) {
-        return err;
+        _oaFreeFilterWheelDeviceList ( &list );
+				if ( err != OA_ERR_LIBRARY_NOT_FOUND && err !=
+						OA_ERR_SYMBOL_NOT_FOUND ) {
+					list.numFilterWheels = 0;
+					list.wheelList = 0;
+					return err;
+				}
       }
     }
   }
 
   *deviceList = list.wheelList;
   return list.numFilterWheels;
+}
+
+
+void
+oaReleaseFilterWheels ( oaFilterWheelDevice** deviceList )
+{
+  // This is a bit cack-handed because we don't know from the data
+  // passed in how many cameras were found last time so we have to
+  // consult a static global instead.
+
+  _oaFreeFilterWheelDeviceList ( &list );
+  list.numFilterWheels = 0;
+  list.wheelList = 0;
+  return;
 }
 
 

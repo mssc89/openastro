@@ -2,7 +2,7 @@
  *
  * cameraControls.h -- class declaration
  *
- * Copyright 2015, 2016 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +28,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtGui>
@@ -36,6 +36,8 @@
 extern "C" {
 #include <openastro/camera.h>
 }
+
+#include "histogramWidget.h"
 
 
 class CameraControls : public QWidget
@@ -49,6 +51,9 @@ class CameraControls : public QWidget
     void		disableAutoControls ( void );
     unsigned int	getCurrentGain ( void );
     unsigned int	getCurrentExposure ( void );
+		void		connectHistogramSignal ( void );
+
+		HistogramWidget*	histogram;
 
   private:
     QVBoxLayout*	layout;
@@ -56,6 +61,7 @@ class CameraControls : public QWidget
     QGridLayout*	checkboxGrid;
     QGridLayout*	buttonGrid;
     QGridLayout*	menuGrid;
+    QGridLayout*	statusGrid;
     QGridLayout*	unhandledGrid;
     QSignalMapper*	sliderSignalMapper;
     QSignalMapper*	checkboxSignalMapper;
@@ -81,6 +87,11 @@ class CameraControls : public QWidget
     QLabel*		exposureRangeLabel;
 
     void		_doFrameRateChange ( int );
+		int			minRangeIndex;
+		int			maxRangeIndex;
+		int			ignoreExposureChanges;
+		QProgressBar*		batteryLevel;
+		QLabel*	powerSource;
 
   public slots:
     void		updateSliderControl ( int );
@@ -92,5 +103,6 @@ class CameraControls : public QWidget
 
     void		buttonPushed ( int );
     void		menuChanged ( int );
-    void		updateExposureUnits ( void );
+    void		updateExposureUnits ( int );
+		void		setBatteryLevel ( void );
 };

@@ -1,7 +1,8 @@
 #
 # Makefile.am -- oalive Makefile template
 #
-# Copyright 2013,2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+# Copyright 2013,2014,2015,2016,2017,2018
+#   James Fidell (james@openastroproject.org)
 #
 # License:
 #
@@ -29,31 +30,26 @@
 
 SUBDIRS = icons desktop # translations
 
-AM_CPPFLAGS = -I$(top_srcdir)/include $(APP_PATH_CFLAGS) \
-  $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS -DOALIVE \
+AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common \
+	$(APP_PATH_CFLAGS) $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS -DOALIVE \
   -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\"
 
-MOC_CPPFLAGS = -I$(top_srcdir)/include $(MOC_CFLAGS) $(APP_PATH_CFLAGS) \
-  $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS -DOALIVE \
+MOC_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common $(MOC_CFLAGS) \
+	$(APP_PATH_CFLAGS) $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS -DOALIVE \
   -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\"
 
 bin_PROGRAMS = oalive
 BUILT_SOURCES = version.h
-oalive_SOURCES = advancedSettings.cc camera.cc controlsWidget.cc \
-  captureSettings.cc demosaicSettings.cc filterSettings.cc filterWheel.cc \
-  fitsSettings.cc focusOverlay.cc generalSettings.cc oalive.cc outputFITS.cc \
-  outputHandler.cc outputPNG.cc outputTIFF.cc profileSettings.cc \
-  settingsWidget.cc targets.cc mainWindow.cc viewWidget.cc cameraControls.cc \
-  stackingControls.cc saveControls.cc \
-  moc_advancedSettings.cc moc_camera.cc moc_controlsWidget.cc \
-  moc_captureSettings.cc moc_demosaicSettings.cc moc_filterSettings.cc \
-  moc_filterWheel.cc moc_fitsSettings.cc moc_focusOverlay.cc \
-  moc_generalSettings.cc moc_profileSettings.cc moc_settingsWidget.cc \
-  moc_mainWindow.cc moc_viewWidget.cc moc_cameraControls.cc \
-  moc_stackingControls.cc moc_saveControls.cc \
+oalive_SOURCES = controlsWidget.cc oalive.cc mainWindow.cc viewWidget.cc \
+	cameraControls.cc stackingControls.cc saveControls.cc processingControls.cc \
+	zoomWidget.cc trampoline.cc \
+	moc_cameraControls.cc moc_controlsWidget.cc moc_mainWindow.cc \
+	moc_processingControls.cc moc_saveControls.cc \
+	moc_stackingControls.cc moc_viewWidget.cc moc_zoomWidget.cc \
   qrc_oalive.cc
 
 oalive_LDADD = \
+  ../common/liboacommon.la \
   ../liboacam/liboacam.la \
   ../liboaimgproc/liboaimgproc.la \
   ../liboademosaic/liboademosaic.la \
@@ -66,8 +62,9 @@ oalive_LDADD = \
   $(LIBDC1394_LIBS) \
   $(LIBFTDI_LIBS) \
   $(LIBUSB_LIBS) \
-  $(LIBASI_LIBS) \
   $(LIBASI2_LIBS) \
+  $(LIBZWOFW_LIBS) \
+	$(LIBGPHOTO2_LIBS) \
   $(OSX_FRAMEWORKS)
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
@@ -87,6 +84,7 @@ ui-%.h: %.ui
 	@UIC@ -o $@ $<
 
 qrc_%.cc: %.qrc
+	$(LN_S) -f $(top_srcdir)/qt-icons .
 	@RCC@ -o $@ $<
 
 mostlyclean-local:

@@ -61,8 +61,8 @@ _resetCamera ( oaCamera* camera )
 
 
 static int
-_startStreaming ( oaCamera* camera, void* (*callback)(void*, void*, int),
-    void* callbackArg )
+_startStreaming ( oaCamera* camera, void* (*callback)(void*, void*, int,
+		void* ), void* callbackArg )
 {
   fprintf ( stderr, "%s not implemented for %s\n", __FUNCTION__,
       camera->deviceName );
@@ -255,6 +255,25 @@ _deviceLoadFirmware ( oaCameraDevice* device )
 }
 
 
+static int
+_startExposure ( oaCamera* camera, time_t when,
+		void* (*callback)(void*, void*, int, void* ), void* callbackArg )
+{
+  fprintf ( stderr, "%s not implemented for %s\n", __FUNCTION__,
+      camera->deviceName );
+  return -OA_ERR_UNIMPLEMENTED;
+}
+
+
+static int
+_abortExposure ( oaCamera* camera )
+{
+  fprintf ( stderr, "%s not implemented for %s\n", __FUNCTION__,
+      camera->deviceName );
+  return -OA_ERR_UNIMPLEMENTED;
+}
+
+
 void
 _oaInitCameraDeviceFunctionPointers ( oaCameraDevice* device )
 {
@@ -299,4 +318,7 @@ _oaInitCameraFunctionPointers ( oaCamera* camera )
 
   camera->funcs.getMenuString = _getMenuString;
   camera->funcs.getAutoWBManualSetting = _getAutoWBManualSetting;
+
+  camera->funcs.startExposure = _startExposure;
+  camera->funcs.abortExposure = _abortExposure;
 }

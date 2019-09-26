@@ -2,7 +2,7 @@
  *
  * EUVCoacam.h -- header for EUVC camera API
  *
- * Copyright 2015,2016,2017,2018
+ * Copyright 2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -28,7 +28,7 @@
 #ifndef OA_EUVC_OACAM_H
 #define OA_EUVC_OACAM_H
 
-extern int		oaEUVCGetCameras ( CAMERA_LIST*, int );
+extern int		oaEUVCGetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaEUVCInitCamera ( oaCameraDevice* );
 extern int              oaEUVCCloseCamera ( oaCamera* );
 
@@ -42,7 +42,7 @@ extern int		oaEUVCCameraGetControlRange ( oaCamera*, int,
 				int64_t*, int64_t*, int64_t*, int64_t* );
 
 extern int		oaEUVCCameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int              oaEUVCCameraStopStreaming ( oaCamera* );
 extern int              oaEUVCCameraIsStreaming ( oaCamera* );
 

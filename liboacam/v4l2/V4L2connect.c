@@ -2,7 +2,7 @@
  *
  * V4L2connect.c -- Initialise V4L2 cameras
  *
- * Copyright 2013,2014,2015,2017,2018
+ * Copyright 2013,2014,2015,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -81,28 +81,12 @@ oaV4L2InitCamera ( oaCameraDevice* device )
   COMMON_INFO*			commonInfo;
   int                   	j;
   uint32_t                 	id;
+	void*							tmpPtr;
 
-
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( V4L2_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
-  if (!( cameraInfo = ( V4L2_STATE* ) malloc ( sizeof ( V4L2_STATE )))) {
-    free ( camera );
-    perror ( "malloc V4L2_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free ( cameraInfo );
-    free ( camera );
-    perror ( "malloc V4L2_STATE failed" );
-    return 0;
-  }
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
 
   camera->interface = device->interface;
   ( void ) strcpy ( camera->deviceName, device->deviceName );
@@ -151,9 +135,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "oaV4L2InitCamera: cannot open video device %s\n",
         cameraInfo->devicePath );
     v4l2_close ( cameraInfo->fd );
-    free (( void * ) commonInfo );
-    free (( void * ) cameraInfo );
-    free (( void * ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -167,9 +149,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
       perror ( "VIDIOC_QUERYCAP" );
     }
     v4l2_close ( cameraInfo->fd );
-    free (( void * ) commonInfo );
-    free (( void * ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -177,9 +157,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s does not support video capture",
       camera->deviceName );
     v4l2_close ( cameraInfo->fd );
-    free (( void * ) commonInfo );
-    free (( void * ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -195,7 +173,6 @@ oaV4L2InitCamera ( oaCameraDevice* device )
 
   OA_CLEAR ( camera->controlType );
   OA_CLEAR ( camera->features );
-  _oaInitCameraFunctionPointers ( camera );
   _V4L2InitFunctionPointers ( camera );
 
   pthread_mutex_init ( &cameraInfo->commandQueueMutex, 0 );
@@ -1348,8 +1325,8 @@ oaV4L2InitCamera ( oaCameraDevice* device )
   cameraInfo->currentFrameFormat = 0;
   cameraInfo->currentV4L2Format = 0;
 
-  camera->features.rawMode = camera->features.demosaicMode = 0;
-  camera->features.hasReset = 1;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
+  camera->features.flags |= OA_CAM_FEATURE_STREAMING;
   if ( cameraInfo->isSPC900 ) {
     camera->features.pixelSizeX = 5600;
     camera->features.pixelSizeY = 5600;
@@ -1396,7 +1373,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
           cameraInfo->currentV4L2Format = formatDesc.pixelformat;
           cameraInfo->currentFrameFormat = OA_PIX_FMT_GBRG8;
           camera->frameFormats [ OA_PIX_FMT_GBRG8 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         default:
@@ -1412,14 +1389,14 @@ oaV4L2InitCamera ( oaCameraDevice* device )
           cameraInfo->currentV4L2Format = formatDesc.pixelformat;
           cameraInfo->currentFrameFormat = OA_PIX_FMT_RGB24;
           camera->frameFormats [ OA_PIX_FMT_RGB24 ] = 1;
-          camera->features.demosaicMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
           break;
 
         case V4L2_PIX_FMT_BGR24:
           cameraInfo->currentV4L2Format = formatDesc.pixelformat;
           cameraInfo->currentFrameFormat = OA_PIX_FMT_BGR24;
           camera->frameFormats [ OA_PIX_FMT_BGR24 ] = 1;
-          camera->features.demosaicMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
           break;
 
         case V4L2_PIX_FMT_GREY:
@@ -1528,7 +1505,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_BGGR8;
           }
           camera->frameFormats [ OA_PIX_FMT_BGGR8 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SRGGB8:
@@ -1537,7 +1514,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_RGGB8;
           }
           camera->frameFormats [ OA_PIX_FMT_RGGB8 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SGBRG8:
@@ -1546,7 +1523,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GBRG8;
           }
           camera->frameFormats [ OA_PIX_FMT_GBRG8 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SGRBG8:
@@ -1555,7 +1532,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GRBG8;
           }
           camera->frameFormats [ OA_PIX_FMT_GRBG8 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SBGGR10:
@@ -1564,7 +1541,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_BGGR10;
           }
           camera->frameFormats [ OA_PIX_FMT_BGGR10 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SRGGB10:
@@ -1573,7 +1550,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_RGGB10;
           }
           camera->frameFormats [ OA_PIX_FMT_RGGB10 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
     
         case V4L2_PIX_FMT_SGBRG10:
@@ -1582,7 +1559,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GBRG10;
           }
           camera->frameFormats [ OA_PIX_FMT_GBRG10 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SGRBG10:
@@ -1591,7 +1568,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GRBG10;
           }
           camera->frameFormats [ OA_PIX_FMT_GRBG10 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SBGGR12:
@@ -1600,7 +1577,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_BGGR12;
           }
           camera->frameFormats [ OA_PIX_FMT_BGGR12 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SRGGB12:
@@ -1609,7 +1586,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_RGGB12;
           }
           camera->frameFormats [ OA_PIX_FMT_RGGB12 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SGBRG12:
@@ -1618,7 +1595,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GBRG12;
           }
           camera->frameFormats [ OA_PIX_FMT_GBRG12 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
         case V4L2_PIX_FMT_SGRBG12:
@@ -1627,22 +1604,25 @@ oaV4L2InitCamera ( oaCameraDevice* device )
             cameraInfo->currentFrameFormat = OA_PIX_FMT_GRBG12;
           }
           camera->frameFormats [ OA_PIX_FMT_GRBG12 ] = 1;
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           break;
 
+        case 0x00000000: // Possibly a degenerate case, but this is returned
+          // for the Celestron Neximage 10
 #ifdef V4L2_PIX_FMT_PWC1
         case V4L2_PIX_FMT_PWC1:
+#endif
 #ifdef V4L2_PIX_FMT_PWC2
         case V4L2_PIX_FMT_PWC2:
 #endif
-          // silently ignore this one because we're never going to make
-          // use of it
+          // silently ignore these because we're never going to make
+          // use of them
           break;
-#endif
 
         default:
-          fprintf ( stderr, "Unhandled V4L2 format '%s': (%c%c%c%c)\n",
-            formatDesc.description, formatDesc.pixelformat & 0xff,
+          fprintf ( stderr, "Unhandled V4L2 format '%s': 0x%08x (%c%c%c%c)\n",
+            formatDesc.description, formatDesc.pixelformat,
+            formatDesc.pixelformat & 0xff,
             ( formatDesc.pixelformat >> 8 ) & 0xff,
             ( formatDesc.pixelformat >> 16 ) & 0xff,
             ( formatDesc.pixelformat >> 24 ) & 0xff );
@@ -1654,9 +1634,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "No suitable video format found on %s",
         camera->deviceName );
     v4l2_close ( cameraInfo->fd );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -1674,9 +1652,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
   if ( v4l2ioctl ( cameraInfo->fd, VIDIOC_S_FMT, &format )) {
     perror ( "VIDIOC_S_FMT xioctl failed" );
     v4l2_close ( cameraInfo->fd );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -1684,9 +1660,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "Can't set required video format in %s.\n",
         __FUNCTION__);
     v4l2_close ( cameraInfo->fd );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -1707,14 +1681,16 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     }
     // FIX ME -- we can't handle mixed frame types here
     if ( V4L2_FRMSIZE_TYPE_DISCRETE == fsize.type ) {
-      if (!(  cameraInfo->frameSizes[1].sizes = realloc (
-          cameraInfo->frameSizes[1].sizes, ( j+1 ) * sizeof ( FRAMESIZE )))) {
+      if (!( tmpPtr = realloc ( cameraInfo->frameSizes[1].sizes,
+					( j+1 ) * sizeof ( FRAMESIZE )))) {
         v4l2_close ( cameraInfo->fd );
-        free (( void* ) commonInfo );
-        free (( void* ) cameraInfo );
-        free (( void* ) camera );
+				if ( cameraInfo->frameSizes[1].numSizes ) {
+					free (( void* ) cameraInfo->frameSizes[1].sizes );
+				}
+        FREE_DATA_STRUCTS;
         return 0;
       }
+			cameraInfo->frameSizes[1].sizes = tmpPtr;
       cameraInfo->frameSizes[1].sizes[j].x = fsize.discrete.width;
       cameraInfo->frameSizes[1].sizes[j].y = fsize.discrete.height;
     } else {
@@ -1724,7 +1700,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
   }
   cameraInfo->frameSizes[1].numSizes = j;
 
-  camera->features.frameRates = 0;
+	camera->features.flags |= OA_CAM_FEATURE_FIXED_FRAME_SIZES;
 
   OA_CLEAR( parm );
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -1733,9 +1709,7 @@ oaV4L2InitCamera ( oaCameraDevice* device )
       perror ( "VIDIOC_G_PARM v4l2ioctl failed" );
       v4l2_close ( cameraInfo->fd );
       free (( void* ) cameraInfo->frameSizes[1].sizes );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -1745,14 +1719,12 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     parm.parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
     parm.parm.capture.timeperframe.numerator = 1;
     parm.parm.capture.timeperframe.denominator = 1;
-    camera->features.frameRates = 1;
+		camera->features.flags |= OA_CAM_FEATURE_FRAME_RATES;
     if ( v4l2ioctl ( cameraInfo->fd, VIDIOC_S_PARM, &parm )) {
       perror ( "VIDIOC_S_PARM v4l2ioctl failed" );
       v4l2_close ( cameraInfo->fd );
       free (( void* ) cameraInfo->frameSizes[1].sizes );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -1765,11 +1737,9 @@ oaV4L2InitCamera ( oaCameraDevice* device )
       oacamV4L2controller, ( void* ) camera )) {
     v4l2_close ( cameraInfo->fd );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( pthread_create ( &( cameraInfo->callbackThread ), 0,
@@ -1781,11 +1751,9 @@ oaV4L2InitCamera ( oaCameraDevice* device )
     pthread_join ( cameraInfo->controllerThread, &dummy );
     v4l2_close ( cameraInfo->fd );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 

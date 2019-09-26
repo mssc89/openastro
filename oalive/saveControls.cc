@@ -2,7 +2,7 @@
  *
  * saveControls.cc -- class for the save data tab in the settings dialog
  *
- * Copyright 2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2017,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -27,32 +27,38 @@
 #include <oa_common.h>
 
 extern "C" {
-#ifdef HAVE_FITSIO_H 
+#if HAVE_FITSIO_H 
 #include "fitsio.h"
 #else
-#ifdef HAVE_CFITSIO_FITSIO_H
+#if HAVE_CFITSIO_FITSIO_H
 #include "cfitsio/fitsio.h" 
 #endif
 #endif
 }
 
 
-#include "saveControls.h"
-#include "state.h"
-#ifdef HAVE_LIBCFITSIO
+#include "commonConfig.h"
+#include "captureSettings.h"
+#include "fitsSettings.h"
+#include "outputHandler.h"
+#if HAVE_LIBCFITSIO
 #include "outputFITS.h"
 #endif
 #include "outputTIFF.h"
 
-#ifdef HAVE_LIBCFITSIO
-#define MAX_FILE_FORMATS        3
+#include "saveControls.h"
+#include "state.h"
+#include "version.h"
+
+#if HAVE_LIBCFITSIO
+#define MAX_FILE_FORMATS        4
 static QString  fileFormats[MAX_FILE_FORMATS] = {
-    "", "TIFF", "FITS"
+    "", "TIFF", "PNG", "FITS"
 };
 #else
-#define MAX_FILE_FORMATS        2
+#define MAX_FILE_FORMATS        3
 static QString  fileFormats[MAX_FILE_FORMATS] = {
-    "", "TIFF"
+    "", "TIFF", "PNG"
 };
 #endif
 
@@ -65,7 +71,7 @@ SaveControls::SaveControls ( QWidget* parent ) : QWidget ( parent )
     QVariant v(i);
     typeMenu->addItem ( fileFormats[i], v );
   }
-  typeMenu->setCurrentIndex ( config.fileTypeOption - 1 );
+  typeMenu->setCurrentIndex ( commonConfig.fileTypeOption - 1 );
   connect ( typeMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( fileTypeChanged ( int )));
 
@@ -113,25 +119,25 @@ SaveControls::SaveControls ( QWidget* parent ) : QWidget ( parent )
 
   observerInput = new QLineEdit ( this );
   observerInput->setMaxLength ( FLEN_VALUE );
-  observerInput->setText ( config.fitsObserver );
+  observerInput->setText ( fitsConf.observer );
   connect ( observerInput, SIGNAL( editingFinished()), this,
       SLOT( updateObserver()));
 
   telescopeInput = new QLineEdit ( this );
   telescopeInput->setMaxLength ( FLEN_VALUE );
-  telescopeInput->setText ( config.fitsTelescope );
+  telescopeInput->setText ( fitsConf.telescope );
   connect ( telescopeInput, SIGNAL( editingFinished()), this,
       SLOT( updateTelescope()));
 
   instrumentInput = new QLineEdit ( this );
   instrumentInput->setMaxLength ( FLEN_VALUE );
-  instrumentInput->setText ( config.fitsInstrument );
+  instrumentInput->setText ( fitsConf.instrument );
   connect ( instrumentInput, SIGNAL( editingFinished()), this,
       SLOT( updateInstrument()));
 
   objectInput = new QLineEdit ( this );
   objectInput->setMaxLength ( FLEN_VALUE );
-  objectInput->setText ( config.fitsObject );
+  objectInput->setText ( fitsConf.object );
   connect ( objectInput, SIGNAL( editingFinished()), this,
       SLOT( updateObject()));
 
@@ -139,7 +145,7 @@ SaveControls::SaveControls ( QWidget* parent ) : QWidget ( parent )
   commentInput->setMaxLength ( FLEN_VALUE );
   connect ( commentInput, SIGNAL( editingFinished()), this,
       SLOT( updateComment()));
-  commentInput->setText ( config.fitsComment );
+  commentInput->setText ( fitsConf.comment );
 
   typeBox = new QHBoxLayout;
   typeBox->addWidget ( typeLabel );
@@ -189,35 +195,35 @@ SaveControls::~SaveControls()
 void
 SaveControls::updateObserver ( void )
 {
-  config.fitsObserver = observerInput->text();
+  fitsConf.observer = observerInput->text();
 }
 
 
 void
 SaveControls::updateTelescope ( void )
 {
-  config.fitsTelescope = telescopeInput->text();
+  fitsConf.telescope = telescopeInput->text();
 }
 
 
 void
 SaveControls::updateInstrument ( void )
 {
-  config.fitsInstrument = instrumentInput->text();
+  fitsConf.instrument = instrumentInput->text();
 }
 
 
 void
 SaveControls::updateObject ( void )
 {
-  config.fitsObject = objectInput->text();
+  fitsConf.object = objectInput->text();
 }
 
 
 void
 SaveControls::updateComment ( void )
 {
-  config.fitsComment = commentInput->text();
+  fitsConf.comment = commentInput->text();
 }
 
 
@@ -306,15 +312,15 @@ void
 SaveControls::fileTypeChanged ( int index )
 {
   QVariant v = typeMenu->itemData ( index );
-  config.fileTypeOption = v.toInt();
-  if ( CAPTURE_TIFF == config.fileTypeOption ||
-      CAPTURE_FITS == config.fileTypeOption ) {
+  commonConfig.fileTypeOption = v.toInt();
+  if ( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+      CAPTURE_FITS == commonConfig.fileTypeOption ) {
     if ( !config.frameFileNameTemplate.contains ( "%INDEX" ) &&
         !config.frameFileNameTemplate.contains ( "%I" ) &&
         !config.processedFileNameTemplate.contains ( "%INDEX" ) &&
         !config.processedFileNameTemplate.contains ( "%I" )) {
       QMessageBox::warning ( this, APPLICATION_NAME,
-          tr ( "The " ) + fileFormats[ config.fileTypeOption ] +
+          tr ( "The " ) + fileFormats[ commonConfig.fileTypeOption ] +
           tr ( " file format is selected, but the filename templates do "
           "not both contain either the \"%INDEX\" or \"%I\" pattern.  Output "
           "files may therefore overwrite each other" ));

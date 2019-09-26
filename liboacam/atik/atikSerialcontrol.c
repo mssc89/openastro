@@ -2,7 +2,7 @@
  *
  * atikSerialcontrol.c -- control functions for Atik serial cameras
  *
- * Copyright 2014,2015,2016,2017,2018
+ * Copyright 2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -157,14 +157,6 @@ oaAtikSerialCameraTestControl ( oaCamera* camera, int control,
       return OA_ERR_NONE;
       break;
 
-    case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
-      if ( val->int32 != OA_EXPOSURE_AUTO && val->int32 !=
-          OA_EXPOSURE_MANUAL ) {
-        return -OA_ERR_OUT_OF_RANGE;
-      }
-      return OA_ERR_NONE;
-      break;     
-
     case OA_CAM_CTRL_BINNING:
       return -OA_ERR_INVALID_CONTROL;
       break;
@@ -212,7 +204,7 @@ oaAtikSerialCameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaAtikSerialCameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND		command;
   CALLBACK		callbackData;
@@ -225,7 +217,7 @@ oaAtikSerialCameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -261,7 +253,7 @@ oaAtikSerialCameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "AtikSerial: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

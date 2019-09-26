@@ -2,7 +2,7 @@
  *
  * camera.h -- camera API header
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -38,19 +38,25 @@ enum oaCameraInterfaceType {
   OA_CAM_IF_V4L2			= 1,
   OA_CAM_IF_PWC				= 2,
   OA_CAM_IF_ZWASI			= 3,
-  OA_CAM_IF_QHY				= 4,
-  OA_CAM_IF_IIDC			= 5,
-  OA_CAM_IF_UVC				= 6,
-  OA_CAM_IF_SX				= 7,
-  OA_CAM_IF_ATIK_SERIAL			= 8,
-  OA_CAM_IF_ZWASI2			= 9,
-  OA_CAM_IF_EUVC			= 10,
-  OA_CAM_IF_FC2				= 11,
-  OA_CAM_IF_TOUPCAM			= 12,
-  OA_CAM_IF_MALLINCAM			= 13,
-  OA_CAM_IF_ALTAIRCAM			= 14,
-  OA_CAM_IF_SPINNAKER			= 15,
-  OA_CAM_IF_COUNT			= 16
+  OA_CAM_IF_QHYCCD			= 4,
+  OA_CAM_IF_QHY				= 5,
+  OA_CAM_IF_IIDC			= 6,
+  OA_CAM_IF_UVC				= 7,
+  OA_CAM_IF_SX				= 8,
+  OA_CAM_IF_ATIK_SERIAL			= 9,
+  OA_CAM_IF_ZWASI2			= 10,
+  OA_CAM_IF_EUVC			= 11,
+  OA_CAM_IF_FC2				= 12,
+  OA_CAM_IF_TOUPCAM			= 13,
+  OA_CAM_IF_MALLINCAM			= 14,
+  OA_CAM_IF_ALTAIRCAM			= 15,
+  OA_CAM_IF_ALTAIRCAM_LEGACY			= 16,
+	OA_CAM_IF_STARSHOOTG		= 17,
+	OA_CAM_IF_RISINGCAM		= 18,
+  OA_CAM_IF_SPINNAKER			= 19,
+  OA_CAM_IF_GPHOTO2			= 20,
+  OA_CAM_IF_DUMMY			= 21,
+  OA_CAM_IF_COUNT			= 22
 };
 
 extern oaInterface	oaCameraInterfaces[ OA_CAM_IF_COUNT + 1 ];
@@ -75,6 +81,11 @@ typedef struct FRAMERATES {
   FRAMERATE*		rates;
 } FRAMERATES;
 
+typedef struct FRAME_METADATA {
+	unsigned int		frameCounterValid : 1;
+	unsigned int		frameCounter;
+} FRAME_METADATA;
+
 struct oaCamera;
 struct oaCameraDevice;
 
@@ -94,7 +105,7 @@ typedef struct oaCameraFuncs {
                        int64_t** );
 
   int              ( *startStreaming )( struct oaCamera*,
-                       void* (*)(void*, void*, int), void* );
+                       void* (*)(void*, void*, int, void* ), void* );
   int              ( *stopStreaming )( struct oaCamera* );
   int              ( *isStreaming )( struct oaCamera* );
 
@@ -117,9 +128,10 @@ typedef struct oaCameraFuncs {
   int              ( *hasAuto )( struct oaCamera*, int );
   int              ( *isAuto )( struct oaCamera*, int );
 
+	int								( *startExposure )( struct oaCamera*, time_t,
+                       void* (*)(void*, void*, int, void* ), void* );
+	int								( *abortExposure )( struct oaCamera* );
 } oaCameraFuncs;
-
-#define OA_MAX_NAME_LEN			60
 
 typedef struct oaCamera {
   enum oaCameraInterfaceType	interface;
@@ -146,7 +158,8 @@ typedef struct oaCameraDevice {
   void*				_private;
 } oaCameraDevice;
 
-extern int		oaGetCameras ( oaCameraDevice*** );
+extern int		oaGetCameras ( oaCameraDevice***, unsigned long );
+extern void		oaReleaseCameras ( oaCameraDevice** );
 extern unsigned		oaGetCameraAPIVersion ( void );
 extern const char*	oaGetCameraAPIVersionStr ( void );
 extern void		oaSetCameraDebugLevel ( int );

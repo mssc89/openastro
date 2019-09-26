@@ -2,7 +2,8 @@
  *
  * atikSerialconnect-ftdi.c -- Initialise Atik serial cameras using libftdi1
  *
- * Copyright 2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -75,31 +76,13 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
   libusb_device*        usbDevice;
   struct libusb_device_descriptor desc;
 
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( AtikSerial_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
-  if (!( cameraInfo = ( AtikSerial_STATE* ) malloc (
-      sizeof ( AtikSerial_STATE )))) {
-    free (( void* ) camera );
-    perror ( "malloc ATIK_SERIAL_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
-    perror ( "malloc COMMON_INFO failed" );
-    return 0;
-  }
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  OA_CLEAR ( camera->controlType );
-  OA_CLEAR ( camera->features );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
+
   devInfo = device->_private;
 
-  _oaInitCameraFunctionPointers ( camera );
   _atikSerialInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
@@ -112,15 +95,11 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     libusb_exit ( cameraInfo->usbContext );
     if ( numUSBDevices ) {
       fprintf ( stderr, "Can't see any USB devices now (list returns -1)\n" );
-      free (( void* ) camera->_common );
-      free (( void* ) camera->_private );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     fprintf ( stderr, "Can't see any USB devices now\n" );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -138,9 +117,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
       libusb_free_device_list ( devlist, 1 );
       libusb_exit ( cameraInfo->usbContext );
       fprintf ( stderr, "get device descriptor failed\n" );
-      free (( void* ) camera->_common );
-      free (( void* ) camera->_private );
-      free ( camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
 
@@ -178,9 +155,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
   if ( !matched ) {
     fprintf ( stderr, "no matching camera\n" );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -189,9 +164,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
         "err = %d\n", ret );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -200,9 +173,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "set 8N1 for device FTDI serial device failed\n" );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -215,9 +186,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: write error on ping\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   usleep ( 100000 );
@@ -226,9 +195,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: read error on ping\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -236,9 +203,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: write error on query caps\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -248,9 +213,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
         numRead );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -265,9 +228,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: read error 2 on query caps\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -279,9 +240,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: read error 3 on query caps\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -292,9 +251,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: read error 4 on query caps\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -333,18 +290,14 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: write error on query serial no\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if (( numRead = cameraInfo->read ( cameraInfo, buffer, 7 ) != 7 )) {
     fprintf ( stderr, "%s: read error on query serial no\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -359,18 +312,14 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: write error on query fifo\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if (( numRead = cameraInfo->read ( cameraInfo, buffer, 1 ) != 1 )) {
     fprintf ( stderr, "%s: read error on query fifo\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   // fprintf ( stderr, "have fifo: %s\n", buffer[0] ? "yes" : "no" );
@@ -381,9 +330,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: write error on ext port\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -391,9 +338,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: read error on ext port\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -421,14 +366,13 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "%s: malloc ( FRAMESIZE ) failed\n", __FUNCTION__ );
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   cameraInfo->frameSizes[1].sizes[0].x = cameraInfo->maxResolutionX;
   cameraInfo->frameSizes[1].sizes[0].y = cameraInfo->maxResolutionY;
   cameraInfo->frameSizes[1].numSizes = 1;
+  camera->features.flags |= OA_CAM_FEATURE_FIXED_FRAME_SIZES;
 
   cameraInfo->buffers = 0;
   cameraInfo->configuredBuffers = 0;
@@ -442,9 +386,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     ftdi_usb_close ( cameraInfo->ftdiContext );
     ftdi_free ( cameraInfo->ftdiContext );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -456,9 +398,7 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     ftdi_free ( cameraInfo->ftdiContext );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -476,12 +416,15 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
       }
       ftdi_usb_close ( cameraInfo->ftdiContext );
       ftdi_free ( cameraInfo->ftdiContext );
+			if ( i ) {
+				for ( j = 0; j < i; j++ ) {
+					free (( void* ) cameraInfo->buffers[j].start );
+				}
+			}
       free (( void* ) cameraInfo->buffers );
       free (( void* ) cameraInfo->xferBuffer );
       free (( void* ) cameraInfo->frameSizes[1].sizes );
-      free (( void* ) camera->_common );
-      free (( void* ) camera->_private );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -497,9 +440,11 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     case CAM_ATK16ICC:
     case CAM_ATK16ICSC:
       cameraInfo->colour = 1;
+      camera->frameFormats [ OA_PIX_FMT_GBRG16LE ] = 1;
       break;
     default:
       cameraInfo->colour = 0;
+      camera->frameFormats [ OA_PIX_FMT_GREY16LE ] = 1;
       break;
   }
 
@@ -544,11 +489,9 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -567,11 +510,9 @@ oaAtikSerialInitCamera ( oaCameraDevice* device )
     free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -640,6 +581,7 @@ oaAtikSerialCloseCamera ( oaCamera* camera )
     }
     free (( void* ) cameraInfo->xferBuffer );
     free (( void* ) cameraInfo->buffers );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo );
     free (( void* ) camera->_common );
     free (( void* ) camera );

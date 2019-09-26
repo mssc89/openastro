@@ -2,7 +2,7 @@
  *
  * atikSerialoacam.h -- header for Atik serial (FTDI-based) camera API
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -41,7 +41,7 @@
 
 #include "atikSerialstate.h"
 
-extern int		oaAtikSerialGetCameras ( CAMERA_LIST*, int );
+extern int		oaAtikSerialGetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaAtikSerialInitCamera ( oaCameraDevice* );
 extern int              oaAtikSerialCloseCamera ( oaCamera* );
 
@@ -55,7 +55,7 @@ extern int		oaAtikSerialCameraGetControlRange ( oaCamera*, int,
 			    int64_t*, int64_t*, int64_t*, int64_t* );
 
 extern int		oaAtikSerialCameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int		oaAtikSerialCameraStopStreaming ( oaCamera* );
 extern int		oaAtikSerialCameraIsStreaming ( oaCamera* );
 

@@ -2,7 +2,7 @@
  *
  * captureWidget.cc -- class for the capture widget in the UI
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -27,7 +27,9 @@
 
 #include <oa_common.h>
 
+#if HAVE_CTIME
 #include <ctime>
+#endif
 #include <iostream>
 #include <fstream>
 #include <QtGui>
@@ -35,6 +37,9 @@
 #include "configuration.h"
 #include "version.h"
 #include "state.h"
+
+#include "commonState.h"
+#include "commonConfig.h"
 #include "captureWidget.h"
 #include "outputFFMPEG.h"
 #include "outputAVI.h"
@@ -46,17 +51,18 @@
 #endif
 #include "outputTIFF.h"
 #include "outputPNG.h"
+#include "outputNamedPipe.h"
 #include "targets.h"
 
 #ifdef HAVE_LIBCFITSIO
-#define	MAX_FILE_FORMATS	7
+#define	MAX_FILE_FORMATS	8
 static QString	fileFormats[MAX_FILE_FORMATS] = {
-    "", "AVI", "SER", "TIFF", "PNG", "FITS", "MOV"
+    "", "AVI", "SER", "TIFF", "PNG", "FITS", "MOV", "Named Pipe"
 };
 #else
-#define	MAX_FILE_FORMATS	6
+#define	MAX_FILE_FORMATS	7
 static QString	fileFormats[MAX_FILE_FORMATS] = {
-    "", "AVI", "SER", "TIFF", "PNG", "MOV"
+    "", "AVI", "SER", "TIFF", "PNG", "MOV", "Named Pipe"
 };
 #endif
 
@@ -71,14 +77,14 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   profileLabel = new QLabel ( tr ( "Profile:" ), this );
   profileMenu = new QComboBox ( this );
   QStringList profileNames;
-  if ( config.numProfiles ) {
-    for ( int i = 0; i < config.numProfiles; i++ ) {
-      profileNames << config.profiles[i].profileName;
+  if ( profileConf.numProfiles ) {
+    for ( int i = 0; i < profileConf.numProfiles; i++ ) {
+      profileNames << profileConf.profiles[i].profileName;
     }
   }
   profileMenu->addItems ( profileNames );
-  if ( config.numProfiles ) {
-    profileMenu->setCurrentIndex ( config.profileOption );
+  if ( profileConf.numProfiles ) {
+    profileMenu->setCurrentIndex ( commonConfig.profileOption );
   }
   profileMenu->setEnabled ( 0 );
   connect ( profileMenu, SIGNAL( currentIndexChanged ( int )), this,
@@ -96,11 +102,11 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   filterLabel = new QLabel ( tr ( "Filter:" ), this );
   filterMenu = new QComboBox ( this );
   QStringList filterNames;
-  for ( int i = 0; i < config.numFilters; i++ ) {
-    filterNames << config.filters[i].filterName;
+  for ( int i = 0; i < filterConf.numFilters; i++ ) {
+    filterNames << filterConf.filters[i].filterName;
   }
   filterMenu->addItems ( filterNames );
-  filterMenu->setCurrentIndex ( config.filterOption );
+  filterMenu->setCurrentIndex ( commonConfig.filterOption );
   connect ( filterMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( filterTypeChanged ( int )));
 
@@ -114,7 +120,7 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
 
   fileLabel = new QLabel ( tr ( "File: " ), this );
   fileName = new QLineEdit ( this );
-  fileName->setText ( config.fileNameTemplate );
+  fileName->setText ( commonConfig.fileNameTemplate );
   QRegExp rx( "[^/; <>]+" );
   fileNameValidator = new QRegExpValidator ( rx, this );
   fileName->setValidator ( fileNameValidator );
@@ -159,14 +165,14 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
     QVariant v(i);
     typeMenu->addItem ( fileFormats[i], v );
   }
-  typeMenu->setCurrentIndex ( config.fileTypeOption - 1 );
-  haveFITS = haveTIFF = havePNG = haveSER = haveMOV = 1;
+  typeMenu->setCurrentIndex ( commonConfig.fileTypeOption - 1 );
+  haveFITS = haveTIFF = havePNG = haveSER = haveMOV = haveNamedPipe = 1;
   connect ( typeMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( fileTypeChanged ( int )));
 
   limitCheckbox = new QCheckBox ( tr ( "Limit:" ), this );
   limitCheckbox->setToolTip ( tr ( "Set a capture time limit" ));
-  limitCheckbox->setChecked ( config.limitEnabled );
+  limitCheckbox->setChecked ( commonConfig.limitEnabled );
   connect ( limitCheckbox, SIGNAL( stateChanged ( int )), this,
       SLOT( showLimitInputBox ( int )));
 
@@ -174,7 +180,7 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   limitTypeStrings << tr ( "secs" ) << tr ( "frames" );
   limitTypeMenu = new QComboBox ( this );
   limitTypeMenu->addItems ( limitTypeStrings );
-  limitTypeMenu->setCurrentIndex ( config.limitType );
+  limitTypeMenu->setCurrentIndex ( commonConfig.limitType );
   connect ( limitTypeMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( limitTypeChanged ( int )));
 
@@ -203,21 +209,21 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   framesInputBox = countFramesMenu->lineEdit();
 
   QString countStr;
-  if ( config.framesLimitValue > 0 ) {
-    countStr = QString::number ( config.framesLimitValue );
+  if ( commonConfig.framesLimitValue > 0 ) {
+    countStr = QString::number ( commonConfig.framesLimitValue );
   } else {
     countStr = "0";
   }
   countFramesMenu->setEditText ( countStr );
-  if ( config.secondsLimitValue > 0 ) {
-    countStr = QString::number ( config.secondsLimitValue );
+  if ( commonConfig.secondsLimitValue > 0 ) {
+    countStr = QString::number ( commonConfig.secondsLimitValue );
   } else {
     countStr = "0";
   }
   countSecondsMenu->setEditText ( countStr );
 
-  if ( config.limitType ) {
-    if ( config.limitEnabled ) {
+  if ( commonConfig.limitType ) {
+    if ( commonConfig.limitEnabled ) {
       countFramesMenu->show();
     } else {
       countFramesMenu->hide();
@@ -225,7 +231,7 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
     countSecondsMenu->hide();
   } else {
     countSecondsMenu->setEditText ( countStr );
-    if ( config.limitEnabled ) {
+    if ( commonConfig.limitEnabled ) {
       countSecondsMenu->show();
     } else {
       countSecondsMenu->hide();
@@ -283,9 +289,9 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   startButton->setEnabled ( 0 );
   pauseButton->setEnabled ( 0 );
   stopButton->setEnabled ( 0 );
-  if ( config.autorunCount && config.limitEnabled &&
-    (( config.framesLimitValue && config.limitType ) ||
-    ( config.secondsLimitValue && !config.limitType ))) {
+  if ( autorunConf.autorunCount && commonConfig.limitEnabled &&
+    (( commonConfig.framesLimitValue && commonConfig.limitType ) ||
+    ( commonConfig.secondsLimitValue && !commonConfig.limitType ))) {
     autorunButton->setEnabled ( 1 );
   } else {
     autorunButton->setEnabled ( 0 );
@@ -306,12 +312,12 @@ CaptureWidget::CaptureWidget ( QWidget* parent ) : QGroupBox ( parent )
   box->addLayout ( type );
   box->addLayout ( controls );
 
-  if ( !config.dockableControls ) {
+  if ( !generalConf.dockableControls ) {
     setTitle ( tr ( "Capture" ));
   }
   setLayout ( box );
 
-  outputHandler = 0;
+  outputHandler = nullptr;
   updateTemperatureLabel = 0;
 
   // Final setup for signals to avoid crossing threads when widgets need to
@@ -338,14 +344,14 @@ void
 CaptureWidget::showLimitInputBox ( int state )
 {
   if ( state == Qt::Unchecked ) {
-    config.limitEnabled = 0;
+    commonConfig.limitEnabled = 0;
     limitTypeMenu->hide();
     countFramesMenu->hide();
     countSecondsMenu->hide();
   } else {
-    config.limitEnabled = 1;
+    commonConfig.limitEnabled = 1;
     limitTypeMenu->show();
-    if ( config.limitType ) {
+    if ( commonConfig.limitType ) {
       countFramesMenu->show();
       countSecondsMenu->hide();
     } else {
@@ -353,7 +359,7 @@ CaptureWidget::showLimitInputBox ( int state )
       countFramesMenu->hide();
     }
   }
-  SET_PROFILE_CONFIG( limitEnabled, config.limitEnabled );
+  SET_PROFILE_CONFIG( limitEnabled, commonConfig.limitEnabled );
 }
 
 
@@ -361,15 +367,15 @@ void
 CaptureWidget::fileTypeChanged ( int index )
 {
   QVariant v = typeMenu->itemData ( index );
-  config.fileTypeOption = v.toInt();
-  SET_PROFILE_CONFIG( fileTypeOption, config.fileTypeOption );
-  if ( CAPTURE_TIFF == config.fileTypeOption ||
-      CAPTURE_PNG == config.fileTypeOption ||
-      CAPTURE_FITS == config.fileTypeOption ) {
-    if ( !config.fileNameTemplate.contains ( "%INDEX" ) &&
-        !config.fileNameTemplate.contains ( "%I" )) {
+  commonConfig.fileTypeOption = v.toInt();
+  SET_PROFILE_CONFIG( fileTypeOption, commonConfig.fileTypeOption );
+  if ( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+      CAPTURE_PNG == commonConfig.fileTypeOption ||
+      CAPTURE_FITS == commonConfig.fileTypeOption ) {
+    if ( !commonConfig.fileNameTemplate.contains ( "%INDEX" ) &&
+        !commonConfig.fileNameTemplate.contains ( "%I" )) {
       QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME, tr ( "The " ) +
-          fileFormats[ config.fileTypeOption ] +
+          fileFormats[ commonConfig.fileTypeOption ] +
           tr ( " file format is selected, but the filename template "
           "does not contain either the \"%INDEX\" or \"%I\" pattern.  Output "
           "files may therefore overwrite each other" ));
@@ -381,8 +387,8 @@ CaptureWidget::fileTypeChanged ( int index )
 void
 CaptureWidget::limitTypeChanged ( int index )
 {
-  config.limitType = index;
-  SET_PROFILE_CONFIG( limitType, config.limitType );
+  commonConfig.limitType = index;
+  SET_PROFILE_CONFIG( limitType, commonConfig.limitType );
   if ( index ) {
     countSecondsMenu->hide();
     countFramesMenu->show();
@@ -407,7 +413,7 @@ CaptureWidget::pauseRecording ( void )
     lastPauseTime = now;
     state.captureWasPaused = 1;
   } else {
-    if ( config.limitEnabled && 0 == config.limitType ) {
+    if ( commonConfig.limitEnabled && 0 == commonConfig.limitType ) {
       // now we need to calculate the new stop time based on how much time
       // had was left between the end time and the pause time at the point
       // at which the capture was paused
@@ -425,9 +431,11 @@ CaptureWidget::pauseRecording ( void )
 void
 CaptureWidget::startRecording ( void )
 {
-  if ( config.timerEnabled && state.timer && state.timer->isInitialised()) {
-    if (( CAPTURE_FITS != config.fileTypeOption && CAPTURE_TIFF !=
-        config.fileTypeOption ) || !config.limitEnabled || !config.limitType ) {
+  if ( timerConf.timerEnabled && commonState.timer &&
+			commonState.timer->isInitialised()) {
+    if (( CAPTURE_FITS != commonConfig.fileTypeOption && CAPTURE_TIFF !=
+        commonConfig.fileTypeOption ) || !commonConfig.limitEnabled ||
+				!commonConfig.limitType ) {
       QString msg = tr ( "\n\nWhen using timer mode the image capture type "
           "should be FITS/TIFF and a frame-based capture limit should be set."
           "\n\nCapture run abandoned" );
@@ -440,31 +448,32 @@ CaptureWidget::startRecording ( void )
   // file capture format and the number of runs multiplied by the expected
   // number of frames would exceed the size of the index.
 
-  if ( config.limitEnabled && ( CAPTURE_TIFF == config.fileTypeOption ||
-      CAPTURE_PNG == config.fileTypeOption ||
-      CAPTURE_FITS == config.fileTypeOption ) &&
-      ( config.fileNameTemplate.contains ( "%INDEX" ) ||
-      config.fileNameTemplate.contains ( "%I" ))) {
+  if ( commonConfig.limitEnabled &&
+			( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+      CAPTURE_PNG == commonConfig.fileTypeOption ||
+      CAPTURE_FITS == commonConfig.fileTypeOption ) &&
+      ( commonConfig.fileNameTemplate.contains ( "%INDEX" ) ||
+      commonConfig.fileNameTemplate.contains ( "%I" ))) {
 
     int numRuns, numDigits;
     unsigned long long numFrames = 0, maxFrames;
 
-    numRuns = state.autorunEnabled ? config.autorunCount : 1;
-    switch ( config.limitType ) {
+    numRuns = state.autorunEnabled ? autorunConf.autorunCount : 1;
+    switch ( commonConfig.limitType ) {
       case 0:
-        numFrames = config.secondsLimitValue * state.currentFPS;
+        numFrames = commonConfig.secondsLimitValue * state.currentFPS;
         break;
       case 1:
-        numFrames = config.framesLimitValue;
+        numFrames = commonConfig.framesLimitValue;
         break;
     }
-    maxFrames = state.captureIndex + numRuns * numFrames;
+    maxFrames = commonState.captureIndex + numRuns * numFrames;
     numDigits = 0;
     do {
       maxFrames /= 10;
       numDigits++;
     } while ( maxFrames );
-    if ( numDigits > config.indexDigits ) {
+    if ( numDigits > captureConf.indexDigits ) {
       if ( QMessageBox::critical ( TOP_WIDGET, APPLICATION_NAME,
           tr ( "The number of frames in the currently configured capture run "
           "is likely to exceed the size of the index in the filename.  "
@@ -478,7 +487,7 @@ CaptureWidget::startRecording ( void )
   doStartRecording ( 0 );
   if ( state.autorunEnabled ) {
     emit changeAutorunLabel ( "1 of " +
-        QString::number ( config.autorunCount ));
+        QString::number ( autorunConf.autorunCount ));
   }
 }
 
@@ -486,10 +495,11 @@ CaptureWidget::startRecording ( void )
 void
 CaptureWidget::doStartRecording ( int autorunFlag )
 {
-  OutputHandler*	out = 0;
+  OutputHandler*	out = nullptr;
   int			format;
   int			pauseButtonState = 1;
   int64_t		exposureTime;
+	QString	emptyStr = "";
 
   state.pauseEnabled = 0;
   state.captureWasPaused = 0;
@@ -501,38 +511,44 @@ CaptureWidget::doStartRecording ( int autorunFlag )
     if ( !autorunFlag ) {
       autorunFilter = 0;
     }
-    if ( config.autorunFilterSequence.count()) {
-      int newFilterNum = config.autorunFilterSequence [ autorunFilter ];
-      // FIX ME -- this may cross threads: don't cross the threads!
-      if ( config.promptForFilterChange && !( state.filterWheel &&
-          state.filterWheel->isInitialised())) {
-        QMessageBox* changeFilter = new QMessageBox ( QMessageBox::NoIcon,
-            APPLICATION_NAME, tr ( "Change to next filter: " ) +
-            config.filters[ newFilterNum ].filterName,
-            QMessageBox::Ok, TOP_WIDGET );
-        changeFilter->exec();
-        delete changeFilter;
+    if ( filterConf.autorunFilterSequence.count()) {
+      int newFilterNum = filterConf.autorunFilterSequence [ autorunFilter ];
+      if ( filterConf.promptForFilterChange && !( commonState.filterWheel &&
+          commonState.filterWheel->isInitialised())) {
+				// Have to do it this way rather than calling direct to ensure
+				// thread-safety
+				QMetaObject::invokeMethod ( state.mainWindow, "promptForFilterChange",
+					 Qt::DirectConnection, Q_ARG( int, newFilterNum ));
       }
       filterTypeChanged ( newFilterNum );
     }
   }
 
-  format = state.camera->videoFramePixelFormat();
-  if ( oaFrameFormats[ format ].rawColour && config.demosaicOutput ) {
+  format = commonState.camera->videoFramePixelFormat();
+  if ( oaFrameFormats[ format ].rawColour && demosaicConf.demosaicOutput ) {
     format = OA_DEMOSAIC_FMT ( format );
   }
 
-  if ( config.queryGPSForEachCapture && state.timer && state.timer->hasGPS()) {
-    if ( state.timer->readGPS ( &state.latitude, &state.longitude,
-        &state.altitude ) == OA_ERR_NONE ) {
-      state.gpsValid = 1;
+  if ( timerConf.queryGPSForEachCapture && commonState.timer &&
+			commonState.timer->hasGPS()) {
+    if ( commonState.timer->readGPS ( &commonState.latitude,
+				&commonState.longitude, &commonState.altitude, 1 ) == OA_ERR_NONE ) {
+      commonState.gpsValid = 1;
       emit ( updateLocation());
     }
   }
 
-  switch ( config.fileTypeOption ) {
+  int actualX, actualY;
+  if ( commonState.cropMode ) {
+    actualX = commonState.cropSizeX;
+    actualY = commonState.cropSizeY;
+  } else {
+    actualX = commonConfig.imageSizeX;
+    actualY = commonConfig.imageSizeY;
+  }
+  switch ( commonConfig.fileTypeOption ) {
     case CAPTURE_AVI:
-      if ( config.windowsCompatibleAVI && WINDIB_OK( format )) {
+      if ( captureConf.windowsCompatibleAVI && WINDIB_OK( format )) {
 
         // This is a bit messy.  If we can write a UtVideo frame that's
         // nice and easy.  If we can write a reliable WinDIB format that's
@@ -542,92 +558,117 @@ CaptureWidget::doStartRecording ( int autorunFlag )
         // and if you have 16-bit greyscale well, you're up a smelly waterway
         // with no means of propulsion
 
-        out = new OutputDIB ( config.imageSizeX, config.imageSizeY,
+        out = new OutputDIB ( actualX, actualY,
             state.controlWidget->getFPSNumerator(),
-            state.controlWidget->getFPSDenominator());
+            state.controlWidget->getFPSDenominator(), format, emptyStr,
+              &trampolines );
       } else {
-        if ( config.useUtVideo && UTVIDEO_OK( format )) {
-          out = new OutputAVI ( config.imageSizeX, config.imageSizeY,
+        if ( captureConf.useUtVideo && UTVIDEO_OK( format )) {
+          out = new OutputAVI ( actualX, actualY,
               state.controlWidget->getFPSNumerator(),
-              state.controlWidget->getFPSDenominator(), format );
+              state.controlWidget->getFPSDenominator(), format, emptyStr,
+							&trampolines );
         } else {
-          out = new OutputAVI ( config.imageSizeX, config.imageSizeY,
+          out = new OutputAVI ( actualX, actualY,
               state.controlWidget->getFPSNumerator(),
-              state.controlWidget->getFPSDenominator(), format );
+              state.controlWidget->getFPSDenominator(), format, emptyStr,
+							&trampolines );
         }
       }
       break;
 
     case CAPTURE_MOV:
-      out = new OutputMOV ( config.imageSizeX, config.imageSizeY,
+      out = new OutputMOV ( actualX, actualY,
           state.controlWidget->getFPSNumerator(),
-          state.controlWidget->getFPSDenominator(), format );
+          state.controlWidget->getFPSDenominator(), format, emptyStr,
+					&trampolines );
       break;
 
     case CAPTURE_SER:
-      out = new OutputSER ( config.imageSizeX, config.imageSizeY,
+      out = new OutputSER ( actualX, actualY,
           state.controlWidget->getFPSNumerator(),
-          state.controlWidget->getFPSDenominator(), format );
+          state.controlWidget->getFPSDenominator(), format, emptyStr,
+					&trampolines );
       break;
 
     case CAPTURE_TIFF:
-      out = new OutputTIFF ( config.imageSizeX, config.imageSizeY,
+      out = new OutputTIFF ( actualX, actualY,
           state.controlWidget->getFPSNumerator(),
-          state.controlWidget->getFPSDenominator(), format );
+          state.controlWidget->getFPSDenominator(), format,
+					APPLICATION_NAME, VERSION_STR, emptyStr,
+					&trampolines );
       break;
 
     case CAPTURE_PNG:
-      out = new OutputPNG ( config.imageSizeX, config.imageSizeY,
+      out = new OutputPNG ( actualX, actualY,
           state.controlWidget->getFPSNumerator(),
-          state.controlWidget->getFPSDenominator(), format );
+          state.controlWidget->getFPSDenominator(), format,
+					APPLICATION_NAME, VERSION_STR, emptyStr,
+					&trampolines );
       break;
 
 #ifdef HAVE_LIBCFITSIO
     case CAPTURE_FITS:
-      out = new OutputFITS ( config.imageSizeX, config.imageSizeY,
+      out = new OutputFITS ( actualX, actualY,
           state.controlWidget->getFPSNumerator(),
-          state.controlWidget->getFPSDenominator(), format );
+          state.controlWidget->getFPSDenominator(), format,
+					APPLICATION_NAME, VERSION_STR, emptyStr,
+					&trampolines );
       break;
 #endif
+
+    case CAPTURE_NAMED_PIPE:
+      out = new OutputNamedPipe ( actualX, actualY,
+          state.controlWidget->getFPSNumerator(),
+          state.controlWidget->getFPSDenominator(), format,
+					APPLICATION_NAME, VERSION_STR, emptyStr,
+					&trampolines );
+      break;
+
   }
 
-  if ( out && ( CAPTURE_TIFF == config.fileTypeOption ||
-      CAPTURE_PNG == config.fileTypeOption ||
-      CAPTURE_FITS == config.fileTypeOption )) {
+  if ( out && ( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+      CAPTURE_PNG == commonConfig.fileTypeOption ||
+      CAPTURE_FITS == commonConfig.fileTypeOption )) {
     if ( !out->outputWritable()) {
-      // FIX ME -- this may cross threads: don't cross the threads!
-      QMessageBox::warning ( TOP_WIDGET, tr ( "Start Recording" ),
-          tr ( "Output is not writable" ));
+			// Have to do it this way rather than calling direct to ensure
+			// thread-safety
+			QMetaObject::invokeMethod ( state.mainWindow, "outputUnwritable",
+				 Qt::DirectConnection );
       delete out;
-      out = 0;
+      out = nullptr;
       return;
     }
   } else {
     if ( out && out->outputExists()) {
       if ( out->outputWritable()) {
-        // FIX ME -- this may cross threads: don't cross the threads!
-        if ( QMessageBox::question ( TOP_WIDGET, tr ( "Start Recording" ),
-            tr ( "Output file exists.  OK to overwrite?" ), QMessageBox::No |
-            QMessageBox::Yes, QMessageBox::No ) == QMessageBox::No ) {
-          delete out;
-          out = 0;
-          return;
-        }
+				if ( CAPTURE_NAMED_PIPE != commonConfig.fileTypeOption  ) {
+					int	result;
+					// Have to do it this way rather than calling direct to ensure
+					// thread-safety
+					QMetaObject::invokeMethod ( state.mainWindow, "outputExists",
+							Qt::DirectConnection, Q_RETURN_ARG( int, result ));
+					if ( result == QMessageBox::No ) {
+						delete out;
+						out = nullptr;
+						return;
+					}
+				}
       } else {
-        // FIX ME -- this may cross threads: don't cross the threads!
-        QMessageBox::warning ( TOP_WIDGET, tr ( "Start Recording" ),
-            tr ( "Output file exists and is not writable" ));
+				// Have to do it this way rather than calling direct to ensure
+				// thread-safety
+				QMetaObject::invokeMethod ( state.mainWindow, "outputExistsUnwritable",
+						Qt::DirectConnection );
         delete out;
-        out = 0;
+        out = nullptr;
         return;
       }
     }
   }
 
   if ( !out || out->openOutput()) {
-    // FIX ME -- this may cross threads: don't cross the threads!
-    QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
-        tr ( "Unable to create file for output" ));
+		QMetaObject::invokeMethod ( state.mainWindow, "createFileFailed",
+				Qt::DirectConnection );
     if ( state.autorunEnabled ) {
       state.autorunRemaining = 1; // force timeout
       filterSequenceRemaining = 1;
@@ -646,17 +687,22 @@ CaptureWidget::doStartRecording ( int autorunFlag )
     state.histogramWidget->resetStats();
   }
 
-  if ( config.timerEnabled && state.timer && state.timer->isInitialised()) {
-    if ( state.timer->hasControl ( OA_TIMER_CTRL_MODE )) {
-      state.timer->setControl ( OA_TIMER_CTRL_MODE, config.timerMode );
+  if ( timerConf.timerEnabled && commonState.timer &&
+			commonState.timer->isInitialised()) {
+
+		int disableTrigger = 0;
+
+    if ( commonState.timer->hasControl ( OA_TIMER_CTRL_MODE )) {
+      commonState.timer->setControl ( OA_TIMER_CTRL_MODE, timerConf.timerMode );
     }
-    if ( state.timer->hasControl ( OA_TIMER_CTRL_COUNT )) {
-      state.timer->setControl ( OA_TIMER_CTRL_COUNT, config.framesLimitValue );
+    if ( commonState.timer->hasControl ( OA_TIMER_CTRL_COUNT )) {
+      commonState.timer->setControl (
+					OA_TIMER_CTRL_COUNT, commonConfig.framesLimitValue );
     }
-    if ( config.timerMode == OA_TIMER_MODE_TRIGGER ) {
-      if ( state.timer->hasControl ( OA_TIMER_CTRL_INTERVAL )) {
-        state.timer->setControl ( OA_TIMER_CTRL_INTERVAL,
-            config.triggerInterval );
+    if ( timerConf.timerMode == OA_TIMER_MODE_TRIGGER ) {
+      if ( commonState.timer->hasControl ( OA_TIMER_CTRL_INTERVAL )) {
+        commonState.timer->setControl ( OA_TIMER_CTRL_INTERVAL,
+            timerConf.triggerInterval );
       }
       // FIX ME
       qWarning() << "Need to check camera trigger is armed?";
@@ -666,31 +712,50 @@ CaptureWidget::doStartRecording ( int autorunFlag )
       // do this with a liboaPTR function?
     }
 
-    // The camera should already be running, but we don't know when it
-    // is going to start sending the frames that correspond to the sync
-    // pulses.  So, temporarily we stop the camera, allow the frames
-    // to drain (we hope), then enable strobe mode on the timer device
-    // and restart the camera
-    emit writeStatusMessage ( tr ( "Pausing camera" ));
-    state.camera->stop();
+		// This may all be rather more complex than I first thought.  Point Grey
+		// cameras, for example, continue to expose frames and generate strobe
+		// pulses even once the driver has been called to stop capturing.
+		// The only way I can see to fix this is to assume that if we're using
+		// the camera in strobe mode then we enable trigger mode as well, to
+		// stop frames being exposed.  Then the drain period can swallow any
+		// frames in transit and captures started again by turning off trigger
+		// mode
+
+		if ( timerConf.timerMode == OA_TIMER_MODE_STROBE &&
+				commonState.camera->hasControl ( OA_CAM_CTRL_TRIGGER_ENABLE ) ==
+				OA_CTRL_TYPE_BOOLEAN ) {
+			emit writeStatusMessage ( tr ( "Pausing camera" ));
+			if ( commonState.camera->hasControl ( OA_CAM_CTRL_TRIGGER_MODE ) ==
+				OA_CTRL_TYPE_DISC_MENU ) {
+				commonState.camera->setControl ( OA_CAM_CTRL_TRIGGER_MODE,
+						OA_TRIGGER_EXTERNAL );
+			}
+			commonState.camera->setControl ( OA_CAM_CTRL_TRIGGER_ENABLE, 1 );
+			disableTrigger = 1;
+		}
+
     // Default is to stop for ten times the exposure interval, up to a
     // maximum of one second.  If we don't have an absolute exposure
     // value then guess at half a second total
     exposureTime = 500000; // 500ms
-    if ( state.camera->hasControl ( OA_CAM_CTRL_EXPOSURE_ABSOLUTE )) {
+    if ( commonState.camera->hasControl ( OA_CAM_CTRL_EXPOSURE_ABSOLUTE )) {
       exposureTime = state.controlWidget->getCurrentExposure() * 10;
       if ( exposureTime > 1000000 ) {
         exposureTime = 1000000;
       }
     }
-    if ( config.userDrainDelayEnabled ) {
-      exposureTime = config.drainDelay * 1000;
+    if ( timerConf.userDrainDelayEnabled ) {
+      exposureTime = timerConf.drainDelay * 1000;
     }
     usleep ( exposureTime );
+
     emit writeStatusMessage ( tr ( "Starting timer" ));
-    state.timer->start();
-    emit writeStatusMessage ( tr ( "Restarting camera" ));
-    state.camera->start();
+    commonState.timer->start();
+
+		if ( disableTrigger ) {
+			emit writeStatusMessage ( tr ( "Restarting camera" ));
+			commonState.camera->setControl ( OA_CAM_CTRL_TRIGGER_ENABLE, 0 );
+		}
     pauseButtonState = 0;
   }
 
@@ -698,19 +763,19 @@ CaptureWidget::doStartRecording ( int autorunFlag )
   emit writeStatusMessage ( tr ( "Recording started" ));
   state.lastRecordedFile = out->getRecordingFilename();
 
-  if ( config.limitEnabled && config.secondsLimitValue ) {
+  if ( commonConfig.limitEnabled && commonConfig.secondsLimitValue ) {
     struct timeval t;
     ( void ) gettimeofday ( &t, 0 );
     unsigned long now = ( unsigned long ) t.tv_sec * 1000 +
         ( unsigned long ) t.tv_usec / 1000;
     recordingStartTime = now;
-    recordingEndTime = now + config.secondsLimitValue * 1000;
+    recordingEndTime = now + commonConfig.secondsLimitValue * 1000;
   }
 
   if ( state.autorunEnabled ) {
     if ( !autorunFlag ) {
-      state.autorunRemaining = config.autorunCount;
-      filterSequenceRemaining = config.autorunFilterSequence.count();
+      state.autorunRemaining = autorunConf.autorunCount;
+      filterSequenceRemaining = filterConf.autorunFilterSequence.count();
     }
   }
 
@@ -728,9 +793,9 @@ CaptureWidget::stopRecording ( void )
     state.autorunRemaining = 0;
   }
   state.previewWidget->forceRecordingStop();
-  if ( config.autorunCount && config.limitEnabled &&
-      (( config.framesLimitValue  && config.limitType ) ||
-      ( config.secondsLimitValue && !config.limitType ))) {
+  if ( autorunConf.autorunCount && commonConfig.limitEnabled &&
+      (( commonConfig.framesLimitValue  && commonConfig.limitType ) ||
+      ( commonConfig.secondsLimitValue && !commonConfig.limitType ))) {
     autorunButton->setEnabled ( 1 );
   }
   // shouldn't need this as it should get done in
@@ -746,7 +811,7 @@ CaptureWidget::doStopRecording ( void )
   if ( state.histogramOn ) {
     state.histogramWidget->stopStats();
   }
-  if ( config.saveCaptureSettings && outputHandler ) {
+  if ( generalConf.saveCaptureSettings && outputHandler ) {
     writeSettings ( outputHandler );
   }
   closeOutputHandler();
@@ -766,7 +831,7 @@ CaptureWidget::enableProfileSelect ( int state )
 {
   profileMenu->setEnabled ( state );
 #ifdef RELOAD_PROFILE
-  restoreButton->setEnabled ( config.numProfiles ? state : 0 );
+  restoreButton->setEnabled ( profileConf.numProfiles ? state : 0 );
 #endif
 }
 
@@ -777,7 +842,7 @@ CaptureWidget::closeOutputHandler ( void )
   if ( outputHandler ) {
     outputHandler->closeOutput();
     delete outputHandler;
-    outputHandler = 0;
+    outputHandler = nullptr;
   }
 }
 
@@ -897,14 +962,38 @@ CaptureWidget::enableMOVCapture ( int enabled )
 
 
 void
+CaptureWidget::enableNamedPipeCapture ( int enabled )
+{
+  int posn;
+
+  posn = CAPTURE_NAMED_PIPE - 1 - ( haveMOV ? 0 : 1 ) - ( haveFITS ? 0 : 1 ) -
+			( haveTIFF ? 0 : 1 ) - ( haveSER ? 0 : 1 ) - ( havePNG ? 0 : 1 );
+
+  if ( haveNamedPipe && !enabled ) {
+    if ( typeMenu->currentIndex() == posn ) {
+      QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
+          tr ( "named pipe output format has been disabled" ));
+    }
+    typeMenu->removeItem ( posn );
+  }
+  if ( !haveNamedPipe && enabled ) {
+    QVariant v( CAPTURE_NAMED_PIPE );
+    typeMenu->insertItem ( posn, fileFormats[ CAPTURE_NAMED_PIPE ], v );
+  }
+  haveNamedPipe = enabled;
+  return;
+}
+
+
+void
 CaptureWidget::setNewCaptureDirectory ( void )
 {
   QFileDialog dialog( this );
 
   dialog.setFileMode ( QFileDialog::Directory );
   dialog.setOption ( QFileDialog::ShowDirsOnly );
-  if ( config.captureDirectory != "" ) {
-    dialog.setDirectory ( config.captureDirectory );
+  if ( commonConfig.captureDirectory != "" ) {
+    dialog.setDirectory ( commonConfig.captureDirectory );
   } else {
     dialog.setDirectory ( "." );
   }
@@ -914,7 +1003,7 @@ CaptureWidget::setNewCaptureDirectory ( void )
     if ( dialog.exec()) {
       QStringList names = dialog.selectedFiles();
       if ( !access ( names[0].toStdString().c_str(), W_OK | R_OK )) {
-        config.captureDirectory = names[0];
+        commonConfig.captureDirectory = names[0];
         done = 1;
       } else {
         QMessageBox err;
@@ -938,8 +1027,8 @@ CaptureWidget::changeFramesLimitText ( void )
 {
   QString countStr = framesInputBox->text();
   if ( countStr != "" ) {
-    config.framesLimitValue = countStr.toInt();
-    SET_PROFILE_CONFIG( framesLimitValue, config.framesLimitValue );
+    commonConfig.framesLimitValue = countStr.toInt();
+    SET_PROFILE_CONFIG( framesLimitValue, commonConfig.framesLimitValue );
   }
 }
 
@@ -949,8 +1038,8 @@ CaptureWidget::changeSecondsLimitText ( void )
 {
   QString countStr = secondsInputBox->text();
   if ( countStr != "" ) {
-    config.secondsLimitValue = countStr.toInt();
-    SET_PROFILE_CONFIG( secondsLimitValue, config.secondsLimitValue );
+    commonConfig.secondsLimitValue = countStr.toInt();
+    SET_PROFILE_CONFIG( secondsLimitValue, commonConfig.secondsLimitValue );
   }
 }
 
@@ -976,7 +1065,8 @@ CaptureWidget::enableAutorun ( void )
 {
   autorunButton->setEnabled ( 1 );
   autorunButton->setIcon ( QIcon ( ":/qt-icons/clicknrun.png" ) );
-  autorunLabel->setText ( "0 of " + QString::number ( config.autorunCount ));
+  autorunLabel->setText ( "0 of " +
+			QString::number ( autorunConf.autorunCount ));
   // set this to 0 to stop autorun being started automagicallly until
   // the first one is kicked off with the start button
   state.autorunStartNext = 0;
@@ -988,7 +1078,7 @@ CaptureWidget::singleAutorunFinished ( void )
 {
   int filterSequenceLength;
 
-  filterSequenceLength = config.autorunFilterSequence.count();
+  filterSequenceLength = filterConf.autorunFilterSequence.count();
   if ( filterSequenceLength ) {
     if ( !--filterSequenceRemaining ) {
       filterSequenceRemaining = filterSequenceLength;
@@ -1013,9 +1103,9 @@ void
 CaptureWidget::startNewAutorun ( void )
 {
   doStartRecording ( 1 );
-  emit changeAutorunLabel ( QString::number ( config.autorunCount -
+  emit changeAutorunLabel ( QString::number ( autorunConf.autorunCount -
       state.autorunRemaining + 1 ) + " of " +
-      QString::number ( config.autorunCount ));
+      QString::number ( autorunConf.autorunCount ));
   state.autorunStartNext = 0;
 }
 
@@ -1023,7 +1113,7 @@ CaptureWidget::startNewAutorun ( void )
 void
 CaptureWidget::resetAutorun ( void )
 {
-  if ( config.autorunCount ) {
+  if ( autorunConf.autorunCount ) {
     enableAutorun();
     state.autorunEnabled = 1;
     emit writeStatusMessage ( tr ( "Autorun Enabled" ));
@@ -1059,8 +1149,8 @@ CaptureWidget::openCaptureDirectory ( void )
   QFileDialog dialog( this );
 
   dialog.setFileMode ( QFileDialog::AnyFile );
-  if ( config.captureDirectory != "" ) {
-    dialog.setDirectory ( config.captureDirectory );
+  if ( commonConfig.captureDirectory != "" ) {
+    dialog.setDirectory ( commonConfig.captureDirectory );
   } else {
     dialog.setDirectory ( "." );
   }
@@ -1072,8 +1162,8 @@ CaptureWidget::openCaptureDirectory ( void )
 void
 CaptureWidget::updateFileNameTemplate ( void )
 {
-  config.fileNameTemplate = fileName->text();
-  SET_PROFILE_CONFIG( fileNameTemplate, config.fileNameTemplate );
+  commonConfig.fileNameTemplate = fileName->text();
+  SET_PROFILE_CONFIG( fileNameTemplate, commonConfig.fileNameTemplate );
 }
 
 
@@ -1082,23 +1172,24 @@ CaptureWidget::getCurrentFilterName ( void )
 {
   int f = -1;
 
-  if ( state.filterWheel && state.filterWheel->isInitialised()) {
-    f = config.filterSlots[ config.filterOption ];
+  if ( commonState.filterWheel && commonState.filterWheel->isInitialised()) {
+    f = filterConf.filterSlots[ commonConfig.filterOption ];
   } else {
-    if ( config.numFilters > 0 && config.filterOption < config.numFilters ) {
-      f = config.filterOption;
+    if ( filterConf.numFilters > 0 &&
+				commonConfig.filterOption < filterConf.numFilters ) {
+      f = commonConfig.filterOption;
     }
   }
-  return ( f >= 0 ) ? config.filters[ f ].filterName : "";
+  return ( f >= 0 ) ? filterConf.filters[ f ].filterName : "";
 }
 
 
 void
 CaptureWidget::filterTypeChanged ( int index )
 {
-  config.filterOption = index;
-  if ( state.filterWheel->isInitialised()) {
-    state.filterWheel->selectFilter ( index + 1 );
+  commonConfig.filterOption = index;
+  if ( commonState.filterWheel->isInitialised()) {
+    commonState.filterWheel->selectFilter ( index + 1 );
   }
   updateFilterSettingsFromProfile();
 }
@@ -1107,8 +1198,9 @@ CaptureWidget::filterTypeChanged ( int index )
 QString
 CaptureWidget::getCurrentProfileName ( void )
 {
-  if ( config.numProfiles > 0 && config.profileOption < config.numProfiles ) {
-    return config.profiles[ config.profileOption ].profileName;
+  if ( profileConf.numProfiles > 0 &&
+			commonConfig.profileOption < profileConf.numProfiles ) {
+    return profileConf.profiles[ commonConfig.profileOption ].profileName;
   }
   return "";
 }
@@ -1117,8 +1209,10 @@ CaptureWidget::getCurrentProfileName ( void )
 QString
 CaptureWidget::getCurrentTargetName ( void )
 {
-  if ( config.numProfiles > 0 && config.profileOption < config.numProfiles ) {
-    return targetList [ config.profiles[ config.profileOption ].target ];
+  if ( profileConf.numProfiles > 0 &&
+			commonConfig.profileOption < profileConf.numProfiles ) {
+    return targetName ( profileConf.profiles[
+				commonConfig.profileOption ].target );
   }
   return "";
 }
@@ -1127,8 +1221,9 @@ CaptureWidget::getCurrentTargetName ( void )
 int
 CaptureWidget::getCurrentTargetId ( void )
 {
-  if ( config.numProfiles > 0 && config.profileOption < config.numProfiles ) {
-    return config.profiles[ config.profileOption ].target;
+  if ( profileConf.numProfiles > 0 &&
+			commonConfig.profileOption < profileConf.numProfiles ) {
+    return profileConf.profiles[ commonConfig.profileOption ].target;
   }
   return -1;
 }
@@ -1137,7 +1232,7 @@ CaptureWidget::getCurrentTargetId ( void )
 void
 CaptureWidget::profileTypeChanged ( int index )
 {
-  config.profileOption = index;
+  commonConfig.profileOption = index;
   updateSettingsFromProfile();
 }
 
@@ -1149,32 +1244,32 @@ CaptureWidget::reloadFilters ( void )
       SLOT( filterTypeChanged ( int )));
 
   int oldCount = filterMenu->count();
-  if ( !state.filterWheel || !state.filterWheel->isInitialised()) {
-    if ( config.numFilters ) {
-      for ( int i = 0; i < config.numFilters; i++ ) {
+  if ( !commonState.filterWheel || !commonState.filterWheel->isInitialised()) {
+    if ( filterConf.numFilters ) {
+      for ( int i = 0; i < filterConf.numFilters; i++ ) {
         if ( i < oldCount ) {
-          filterMenu->setItemText ( i, config.filters[i].filterName );
+          filterMenu->setItemText ( i, filterConf.filters[i].filterName );
         } else {
-          filterMenu->addItem ( config.filters[i].filterName );
+          filterMenu->addItem ( filterConf.filters[i].filterName );
         }
       }
     }
-    if ( config.numFilters < oldCount ) {
-      for ( int i = config.numFilters; i < oldCount; i++ ) {
-        filterMenu->removeItem ( config.numFilters );
+    if ( filterConf.numFilters < oldCount ) {
+      for ( int i = filterConf.numFilters; i < oldCount; i++ ) {
+        filterMenu->removeItem ( filterConf.numFilters );
       }
     }
   } else {
-    int numSlots = state.filterWheel->numSlots();
+    int numSlots = commonState.filterWheel->numSlots();
     if ( numSlots ) {
       for ( int i = numSlots - 1; i >= 0; i-- ) {
-        if ( config.filterSlots[ i ] >= 0 ) {
+        if ( filterConf.filterSlots[ i ] >= 0 ) {
           if ( i < oldCount ) {
             filterMenu->setItemText ( i,
-                config.filters[ config.filterSlots[ i ]].filterName );
+                filterConf.filters[ filterConf.filterSlots[ i ]].filterName );
           } else {
             filterMenu->addItem (
-                config.filters[ config.filterSlots[ i ]].filterName );
+                filterConf.filters[ filterConf.filterSlots[ i ]].filterName );
           }
         } else {
           filterMenu->removeItem ( i );
@@ -1199,24 +1294,24 @@ CaptureWidget::reloadProfiles ( void )
   disconnect ( profileMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( profileTypeChanged ( int )));
   int oldCount = profileMenu->count();
-  if ( config.numProfiles ) {
-    for ( int i = 0; i < config.numProfiles; i++ ) {
+  if ( profileConf.numProfiles ) {
+    for ( int i = 0; i < profileConf.numProfiles; i++ ) {
       if ( i < oldCount ) {
-        profileMenu->setItemText ( i, config.profiles[i].profileName );
+        profileMenu->setItemText ( i, profileConf.profiles[i].profileName );
       } else {
-        profileMenu->addItem ( config.profiles[i].profileName );
+        profileMenu->addItem ( profileConf.profiles[i].profileName );
       }
     }
   }
-  if ( config.numProfiles < oldCount ) {
-    for ( int i = config.numProfiles; i < oldCount; i++ ) {
-      profileMenu->removeItem ( config.numProfiles );
+  if ( profileConf.numProfiles < oldCount ) {
+    for ( int i = profileConf.numProfiles; i < oldCount; i++ ) {
+      profileMenu->removeItem ( profileConf.numProfiles );
     }
   }
   connect ( profileMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( profileTypeChanged ( int )));
 #ifdef RELOAD_PROFILE
-  restoreButton->setEnabled ( config.numProfiles ? 1 : 0 );
+  restoreButton->setEnabled ( profileConf.numProfiles ? 1 : 0 );
 #endif
 }
 
@@ -1224,32 +1319,37 @@ CaptureWidget::reloadProfiles ( void )
 void
 CaptureWidget::updateSettingsFromProfile ( void )
 {
-  config.binning2x2 = config.profiles[ config.profileOption ].binning2x2;
-  config.colourise = config.profiles[ config.profileOption ].colourise;
-  config.useROI = config.profiles[ config.profileOption ].useROI;
-  config.imageSizeX = config.profiles[ config.profileOption ].imageSizeX;
-  config.imageSizeY = config.profiles[ config.profileOption ].imageSizeY;
+  commonConfig.binning2x2 = profileConf.profiles[
+			commonConfig.profileOption ].binning2x2;
+  commonConfig.colourise = profileConf.profiles[
+			commonConfig.profileOption ].colourise;
+  commonConfig.useROI = profileConf.profiles[
+			commonConfig.profileOption ].useROI;
+  commonConfig.imageSizeX = profileConf.profiles[
+			commonConfig.profileOption ].imageSizeX;
+  commonConfig.imageSizeY = profileConf.profiles[
+			commonConfig.profileOption ].imageSizeY;
 
-  config.frameRateNumerator =
-      config.profiles[ config.profileOption ].frameRateNumerator;
-  config.frameRateDenominator =
-      config.profiles[ config.profileOption ].frameRateDenominator;
-  config.fileTypeOption =
-      config.profiles[ config.profileOption ].fileTypeOption;
-  config.fileNameTemplate =
-      config.profiles[ config.profileOption ].fileNameTemplate;
-  config.limitEnabled =
-      config.profiles[ config.profileOption ].limitEnabled;
-  config.framesLimitValue =
-      config.profiles[ config.profileOption ].framesLimitValue;
-  config.secondsLimitValue =
-      config.profiles[ config.profileOption ].secondsLimitValue;
+  commonConfig.frameRateNumerator =
+      profileConf.profiles[ commonConfig.profileOption ].frameRateNumerator;
+  commonConfig.frameRateDenominator =
+      profileConf.profiles[ commonConfig.profileOption ].frameRateDenominator;
+  commonConfig.fileTypeOption =
+      profileConf.profiles[ commonConfig.profileOption ].fileTypeOption;
+  commonConfig.fileNameTemplate =
+      profileConf.profiles[ commonConfig.profileOption ].fileNameTemplate;
+  commonConfig.limitEnabled =
+      profileConf.profiles[ commonConfig.profileOption ].limitEnabled;
+  commonConfig.framesLimitValue =
+      profileConf.profiles[ commonConfig.profileOption ].framesLimitValue;
+  commonConfig.secondsLimitValue =
+      profileConf.profiles[ commonConfig.profileOption ].secondsLimitValue;
 
   for ( int i = 1; i < OA_CAM_CTRL_LAST_P1; i++ ) {
     for ( int j = 0; j < OA_CAM_CTRL_MODIFIERS_P1; j++ ) {
-      config.controlValues[j][i] =
-        config.profiles[ config.profileOption ].filterProfiles[
-        config.filterOption ].controls[j][i];
+      cameraConf.controlValues[j][i] =
+        profileConf.profiles[ commonConfig.profileOption ].filterProfiles[
+        commonConfig.filterOption ].controls[j][i];
     }
   }
 
@@ -1265,9 +1365,9 @@ CaptureWidget::updateFilterSettingsFromProfile ( void )
 {
   for ( int i = 1; i < OA_CAM_CTRL_LAST_P1; i++ ) {
     for ( int j = 0; j < OA_CAM_CTRL_MODIFIERS_P1; j++ ) {
-      config.controlValues[j][i] =
-        config.profiles[ config.profileOption ].filterProfiles[
-        config.filterOption ].controls[j][i];
+      cameraConf.controlValues[j][i] =
+        profileConf.profiles[ commonConfig.profileOption ].filterProfiles[
+        commonConfig.filterOption ].controls[j][i];
     }
   }
 
@@ -1281,21 +1381,23 @@ CaptureWidget::updateFromConfig ( void )
 {
   disconnect ( filterMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( filterTypeChanged ( int )));
-  if ( config.numFilters > config.filterOption ) {
-    filterMenu->setCurrentIndex ( config.filterOption );
+  if ( filterConf.numFilters > commonConfig.filterOption ) {
+    filterMenu->setCurrentIndex ( commonConfig.filterOption );
   }
   connect ( filterMenu, SIGNAL( currentIndexChanged ( int )), this,
       SLOT( filterTypeChanged ( int )));
-  fileName->setText ( config.fileNameTemplate );
-  if ( typeMenu->count() >= config.fileTypeOption ) {
-    typeMenu->setCurrentIndex ( config.fileTypeOption - 1 );
+  fileName->setText ( commonConfig.fileNameTemplate );
+  if ( typeMenu->count() >= commonConfig.fileTypeOption ) {
+    typeMenu->setCurrentIndex ( commonConfig.fileTypeOption - 1 );
   }
-  limitCheckbox->setChecked ( config.limitEnabled );
-  if ( config.framesLimitValue > 0 ) {
-    framesInputBox->setText ( QString::number ( config.framesLimitValue ));
+  limitCheckbox->setChecked ( commonConfig.limitEnabled );
+  if ( commonConfig.framesLimitValue > 0 ) {
+    framesInputBox->setText ( QString::number (
+				commonConfig.framesLimitValue ));
   }
-  if ( config.secondsLimitValue > 0 ) {
-    secondsInputBox->setText ( QString::number ( config.secondsLimitValue ));
+  if ( commonConfig.secondsLimitValue > 0 ) {
+    secondsInputBox->setText ( QString::number (
+				commonConfig.secondsLimitValue ));
   }
 }
 
@@ -1323,7 +1425,7 @@ CaptureWidget::writeSettings ( OutputHandler* out )
     settings << APPLICATION_NAME << " " << VERSION_STR << std::endl;
     settings << std::endl;
     settings << tr ( "Camera: " ).toStdString().c_str() <<
-        state.camera->name() << std::endl;
+        commonState.camera->name() << std::endl;
     settings << tr ( "Time: " ).toStdString().c_str() <<
         timeStr.toStdString() << std::endl;
 
@@ -1340,8 +1442,8 @@ CaptureWidget::writeSettings ( OutputHandler* out )
       for ( int mod = 0; mod <= OA_CAM_CTRL_MODIFIER_AUTO; mod++ ) {
         int c = baseVal | ( mod ? OA_CAM_CTRL_MODIFIER_AUTO_MASK : 0 );
         int type;
-        if (( type = state.camera->hasControl ( c ))) {
-          int v = config.CONTROL_VALUE( c );
+        if (( type = commonState.camera->hasControl ( c ))) {
+          int v = cameraConf.CONTROL_VALUE( c );
           switch ( c ) {
             case OA_CAM_CTRL_EXPOSURE_ABSOLUTE:
             {
@@ -1352,7 +1454,7 @@ CaptureWidget::writeSettings ( OutputHandler* out )
               break;
             }
             case OA_CAM_CTRL_TEMPERATURE:
-              if ( config.tempsInC ) {
+              if ( generalConf.tempsInC ) {
                 settings << tr ( "Temp (C): " ).toStdString().c_str();
               } else {
                 settings << tr ( "Temp (F): " ).toStdString().c_str();
@@ -1369,8 +1471,9 @@ CaptureWidget::writeSettings ( OutputHandler* out )
               break;
           }
 
-          if ( state.camera->hasControl ( OA_CAM_CTRL_MODE_ON_OFF (baseVal))) {
-            v = config.CONTROL_VALUE ( OA_CAM_CTRL_MODE_ON_OFF ( baseVal ));
+          if ( commonState.camera->hasControl (
+								OA_CAM_CTRL_MODE_ON_OFF (baseVal))) {
+            v = cameraConf.CONTROL_VALUE ( OA_CAM_CTRL_MODE_ON_OFF ( baseVal ));
             settings << tr ( v ? "on" : "off" ).toStdString().c_str() <<
                 std::endl;
           } else {
@@ -1383,15 +1486,8 @@ CaptureWidget::writeSettings ( OutputHandler* out )
                 break;
 
               case OA_CTRL_TYPE_BOOLEAN:
-                if ( OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_UNSCALED )
-                    == c || OA_CAM_CTRL_MODE_AUTO(
-                    OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) == c ) {
-                  settings << tr ( OA_EXPOSURE_AUTO == v ? "on" :
-                      "off" ).toStdString().c_str() << std::endl;
-                } else {
-                  settings << tr ( v ? "on" : "off" ).toStdString().c_str() <<
-                      std::endl;
-                }
+                settings << tr ( v ? "on" : "off" ).toStdString().c_str() <<
+										std::endl;
                 break;
 
               case OA_CTRL_TYPE_READONLY:
@@ -1400,10 +1496,10 @@ CaptureWidget::writeSettings ( OutputHandler* out )
                   case OA_CAM_CTRL_TEMPERATURE:
                   {
                     QString stringVal;
-                    float temp = state.camera->getTemperature();
-                    state.cameraTempValid = 1;
-                    state.cameraTemp = temp;
-                    if ( !config.tempsInC ) {
+                    float temp = commonState.camera->getTemperature();
+                    commonState.cameraTempValid = 1;
+                    commonState.cameraTemp = temp;
+                    if ( !generalConf.tempsInC ) {
                       temp = temp * 9 / 5 + 32;
                     }
                     stringVal.setNum ( temp, 'g', 3 );
@@ -1412,7 +1508,8 @@ CaptureWidget::writeSettings ( OutputHandler* out )
                   }
 
                   case OA_CAM_CTRL_DROPPED:
-                    settings << state.camera->readControl( OA_CAM_CTRL_DROPPED )
+                    settings << commonState.camera->readControl(
+												OA_CAM_CTRL_DROPPED )
                       << std::endl;
                     break;
 
@@ -1430,7 +1527,7 @@ CaptureWidget::writeSettings ( OutputHandler* out )
                 switch ( c ) {
 
                   case OA_CAM_CTRL_BINNING:
-                    if ( config.binning2x2 ) {
+                    if ( commonConfig.binning2x2 ) {
                       settings << "2x2" << std::endl;
                     } else {
                       settings << "1x1" << std::endl;
@@ -1459,22 +1556,28 @@ CaptureWidget::writeSettings ( OutputHandler* out )
         oaFrameFormats[ config.inputFrameFormat ].simpleName ).toStdString().
         c_str() << ")" << std::endl;
 
-    settings << tr ( "Image size: " ).toStdString().c_str() <<
-        config.imageSizeX << "x" << config.imageSizeY << std::endl;
+    if ( commonState.cropMode ) {
+      settings << tr ( "Image size: " ).toStdString().c_str() <<
+          commonState.cropSizeX << "x" << commonState.cropSizeY << std::endl;
+    } else {
+      settings << tr ( "Image size: " ).toStdString().c_str() <<
+          commonConfig.imageSizeX << "x" << commonConfig.imageSizeY << std::endl;
+    }
 
-    if ( state.camera->hasFrameRateSupport()) {
+    if ( commonState.camera->hasFrameRateSupport()) {
       settings << tr ( "Frame rate/sec: " ).toStdString().c_str();
       if ( state.captureWasPaused ) {
         settings << tr ( "n/a (capture paused)" ).toStdString().c_str();
       } else {
-        settings << config.frameRateNumerator;
-        if ( config.frameRateDenominator != 1 ) {
-          settings << "/" << config.frameRateDenominator;
+        settings << commonConfig.frameRateNumerator;
+        if ( commonConfig.frameRateDenominator != 1 ) {
+          settings << "/" << commonConfig.frameRateDenominator;
         }
       }
       settings << std::endl;
     }
-    if ( config.numFilters > 0 && config.filterOption < config.numFilters ) {
+    if ( filterConf.numFilters > 0 &&
+				commonConfig.filterOption < filterConf.numFilters ) {
       QString n = getCurrentFilterName();
       settings <<  tr ( "Filter: " ).toStdString().c_str() <<
           n.toStdString() << std::endl;
@@ -1540,19 +1643,19 @@ CaptureWidget::writeSettings ( OutputHandler* out )
     }
 
     settings << tr ( "Recording type: " ).toStdString().c_str() <<
-        fileFormats[ config.fileTypeOption ].toStdString().c_str() <<
+        fileFormats[ commonConfig.fileTypeOption ].toStdString().c_str() <<
         std::endl;
 
-    if ( config.limitEnabled && (( config.framesLimitValue &&
-        config.limitType ) || ( config.secondsLimitValue &&
-        !config.limitType ))) {
+    if ( commonConfig.limitEnabled && (( commonConfig.framesLimitValue &&
+        commonConfig.limitType ) || ( commonConfig.secondsLimitValue &&
+        !commonConfig.limitType ))) {
       settings << tr ( "Limit " ).toStdString().c_str();
-      if ( config.limitType ) {
+      if ( commonConfig.limitType ) {
         settings << tr ( "(frames) : " ).toStdString().c_str() <<
-            config.framesLimitValue << std::endl;
+            commonConfig.framesLimitValue << std::endl;
       } else {
         settings << tr ( "(seconds) : " ).toStdString().c_str() <<
-            config.secondsLimitValue << std::endl;
+            commonConfig.secondsLimitValue << std::endl;
       }
     }
 
@@ -1569,6 +1672,15 @@ CaptureWidget::writeSettings ( OutputHandler* out )
       }
     }
 
+		if ( commonState.gpsValid ) {
+			settings << tr ( "Longitude: ").toStdString().c_str() <<
+				commonState.longitude << std::endl;
+			settings << tr ( "Latitude: ").toStdString().c_str() <<
+				commonState.latitude << std::endl;
+			settings << tr ( "Altitude: ").toStdString().c_str() <<
+				commonState.altitude << std::endl;
+		}
+	
     settings.close();
   } else {
     QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
@@ -1618,9 +1730,9 @@ CaptureWidget::setButtonsForRecordingStopped ( void )
   startButton->setEnabled ( 1 );
   pauseButton->setEnabled ( 0 );
   stopButton->setEnabled ( 0 );
-  if ( config.autorunCount && config.limitEnabled &&
-      (( config.framesLimitValue  && config.limitType ) ||
-      ( config.secondsLimitValue && !config.limitType ))) {
+  if ( autorunConf.autorunCount && commonConfig.limitEnabled &&
+      (( commonConfig.framesLimitValue  && commonConfig.limitType ) ||
+      ( commonConfig.secondsLimitValue && !commonConfig.limitType ))) {
     autorunButton->setEnabled ( 1 );
   }
   state.imageWidget->enableAllControls ( 1 );

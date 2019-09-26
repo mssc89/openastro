@@ -2,7 +2,8 @@
  *
  * SXconnect.c -- Initialise Starlight Xpress cameras
  *
- * Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -72,30 +73,11 @@ oaSXInitCamera ( oaCameraDevice* device )
       break;
   }
 
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
-    return 0;
-  }
-  if (!( cameraInfo = ( SX_STATE* ) malloc ( sizeof ( SX_STATE )))) {
-    free (( void* ) camera );
-    perror ( "malloc SX_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
-    perror ( "malloc COMMON_INFO failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( SX_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
 
-
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
-
-  _oaInitCameraFunctionPointers ( camera );
   _SXInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
@@ -112,15 +94,11 @@ oaSXInitCamera ( oaCameraDevice* device )
     libusb_exit ( cameraInfo->usbContext );
     if ( numUSBDevices ) {
       fprintf ( stderr, "Can't see any USB devices now (list returns -1)\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     fprintf ( stderr, "Can't see any USB devices now\n" );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -133,9 +111,7 @@ oaSXInitCamera ( oaCameraDevice* device )
       libusb_free_device_list ( devlist, 1 );
       libusb_exit ( cameraInfo->usbContext );
       fprintf ( stderr, "get device descriptor failed\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     if ( desc.idVendor == SXCameraList[ devInfo->misc ].vendorId &&
@@ -151,17 +127,13 @@ oaSXInitCamera ( oaCameraDevice* device )
   if ( !matched ) {
     fprintf ( stderr, "No matching USB device found!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( !usbHandle ) {
     fprintf ( stderr, "Unable to open USB device!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -172,9 +144,7 @@ oaSXInitCamera ( oaCameraDevice* device )
   if ( libusb_claim_interface ( usbHandle, 1 )) {
     fprintf ( stderr, "Unable to claim interface for USB device!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -189,9 +159,7 @@ oaSXInitCamera ( oaCameraDevice* device )
     libusb_close ( usbHandle );
     libusb_free_device_list ( devlist, 1 );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if (( ret = libusb_bulk_transfer ( usbHandle, SXUSB_BULK_ENDP_IN, buff,
@@ -201,9 +169,7 @@ oaSXInitCamera ( oaCameraDevice* device )
     libusb_close ( usbHandle );
     libusb_free_device_list ( devlist, 1 );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -228,9 +194,7 @@ oaSXInitCamera ( oaCameraDevice* device )
     libusb_close ( usbHandle );
     libusb_free_device_list ( devlist, 1 );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if (( ret = libusb_bulk_transfer ( usbHandle, SXUSB_BULK_ENDP_IN, buff,
@@ -240,25 +204,24 @@ oaSXInitCamera ( oaCameraDevice* device )
     libusb_close ( usbHandle );
     libusb_free_device_list ( devlist, 1 );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
   cameraModel = buff[0] | ( buff[1] << 8 );
   cameraInfo->isInterlaced = ( cameraModel & SX_MODEL_MASK_INTERLACE ) ? 1 : 0;
 
-  camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = OA_CTRL_TYPE_INT64;
+  camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+			OA_CTRL_TYPE_INT64;
   commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1000;
-  commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 0xffffffff * 1000;
+  commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+			0xffffffff * 1000;
   commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1000;
-  commonInfo->OA_CAM_CTRL_DEF( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = SX_DEFAULT_EXPOSURE * 1000;
+  commonInfo->OA_CAM_CTRL_DEF( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+			SX_DEFAULT_EXPOSURE * 1000;
 
   camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_DROPPED ) = OA_CTRL_TYPE_READONLY;
   camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_DROPPED_RESET ) = OA_CTRL_TYPE_BUTTON;
-
-  // camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_BINNING ) = OA_CTRL_TYPE_DISCRETE;
 
   if ( extraCaps & SXUSB_CAPS_COOLER ) {
     // These are just made up as I have no documentation
@@ -281,8 +244,8 @@ oaSXInitCamera ( oaCameraDevice* device )
   if ( cameraInfo->bitDepth <= 8 ) {
     cameraInfo->bytesPerPixel = 1;
     if ( cameraInfo->isColour ) {
-      cameraInfo->currentFrameFormat = OA_PIX_FMT_GRBG8;
-      camera->frameFormats[ OA_PIX_FMT_GRBG8 ] = 1;
+      cameraInfo->currentFrameFormat = OA_PIX_FMT_BGGR8;
+      camera->frameFormats[ OA_PIX_FMT_BGGR8 ] = 1;
     } else {
       cameraInfo->currentFrameFormat = OA_PIX_FMT_GREY8;
       camera->frameFormats[ OA_PIX_FMT_GREY8 ] = 1;
@@ -290,30 +253,36 @@ oaSXInitCamera ( oaCameraDevice* device )
   } else {
     cameraInfo->bytesPerPixel = 2;
     if ( cameraInfo->isColour ) {
-      cameraInfo->currentFrameFormat = OA_PIX_FMT_GRBG16LE;
-      camera->frameFormats[ OA_PIX_FMT_GRBG16LE ] = 1;
+      cameraInfo->currentFrameFormat = OA_PIX_FMT_BGGR16LE;
+      camera->frameFormats[ OA_PIX_FMT_BGGR16LE ] = 1;
     } else {
       cameraInfo->currentFrameFormat = OA_PIX_FMT_GREY16LE;
       camera->frameFormats[ OA_PIX_FMT_GREY16LE ] = 1;
     }
   }
-  cameraInfo->binMode = cameraInfo->requestedBinMode = OA_BIN_MODE_NONE;
 
-  camera->features.hasReset = 1;
+  camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_BINNING ) = OA_CTRL_TYPE_DISCRETE;
+  cameraInfo->binMode = OA_BIN_MODE_NONE;
+
+  camera->features.flags |= OA_CAM_FEATURE_ROI;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
   switch ( devInfo->devType ) {
     case CAM_LODESTAR:
       camera->features.pixelSizeX = 8200;
       camera->features.pixelSizeY = 8400;
+			camera->features.flags |= OA_CAM_FEATURE_STREAMING;
       break;
     case CAM_LODESTAR_C:
       camera->features.pixelSizeX = 8600;
       camera->features.pixelSizeY = 8300;
+			camera->features.flags |= OA_CAM_FEATURE_STREAMING;
+			break;
     case CAM_COSTAR:
       camera->features.pixelSizeX = 5200;
       camera->features.pixelSizeY = 5200;
+			camera->features.flags |= OA_CAM_FEATURE_STREAMING;
       break;
   }
-
 
   pthread_mutex_init ( &cameraInfo->commandQueueMutex, 0 );
   pthread_mutex_init ( &cameraInfo->callbackQueueMutex, 0 );
@@ -331,18 +300,14 @@ oaSXInitCamera ( oaCameraDevice* device )
   if (!( cameraInfo->frameSizes[1].sizes =
       ( FRAMESIZE* ) malloc ( sizeof ( FRAMESIZE )))) {
     fprintf ( stderr, "%s: malloc ( FRAMESIZE ) failed\n", __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if (!( cameraInfo->frameSizes[2].sizes =
       ( FRAMESIZE* ) malloc ( sizeof ( FRAMESIZE )))) {
     fprintf ( stderr, "%s: malloc ( FRAMESIZE ) failed\n", __FUNCTION__ );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free ( camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -354,22 +319,23 @@ oaSXInitCamera ( oaCameraDevice* device )
   cameraInfo->frameSizes[2].sizes[0].y = cameraInfo->maxResolutionY / 2;
   cameraInfo->frameSizes[2].numSizes = 1;
 
-  cameraInfo->xSize = cameraInfo->maxResolutionX;
-  cameraInfo->ySize = cameraInfo->maxResolutionY;
+  cameraInfo->xSubframeSize = cameraInfo->xImageSize =
+			cameraInfo->maxResolutionX;
+  cameraInfo->ySubframeSize = cameraInfo->yImageSize =
+			cameraInfo->maxResolutionY;
 
 
   cameraInfo->buffers = 0;
   cameraInfo->configuredBuffers = 0;
-  cameraInfo->imageBufferLength = cameraInfo->maxResolutionX *
-      cameraInfo->maxResolutionY * cameraInfo->bytesPerPixel;
+  cameraInfo->actualImageLength = cameraInfo->imageBufferLength =
+			cameraInfo->maxResolutionX * cameraInfo->maxResolutionY *
+			cameraInfo->bytesPerPixel;
   if (!( cameraInfo->xferBuffer = malloc ( cameraInfo->imageBufferLength ))) {
     fprintf ( stderr, "malloc of transfer buffer failed in %s\n",
         __FUNCTION__ );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo->frameSizes[2].sizes );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -380,9 +346,7 @@ oaSXInitCamera ( oaCameraDevice* device )
     free (( void* ) cameraInfo->frameSizes[1].sizes );
     free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -402,9 +366,7 @@ oaSXInitCamera ( oaCameraDevice* device )
       free (( void* ) cameraInfo->frameSizes[2].sizes );
       free (( void* ) cameraInfo->xferBuffer );
       free (( void* ) cameraInfo->buffers );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free ( camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -424,11 +386,9 @@ oaSXInitCamera ( oaCameraDevice* device )
     free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -446,11 +406,9 @@ oaSXInitCamera ( oaCameraDevice* device )
     free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -476,12 +434,14 @@ _SXInitFunctionPointers ( oaCamera* camera )
   camera->funcs.isStreaming = oaSXCameraIsStreaming;
 
   camera->funcs.setResolution = oaSXCameraSetResolution;
+  camera->funcs.setROI = oaSXCameraSetResolution;
 
   camera->funcs.hasAuto = oacamHasAuto;
   // camera->funcs.isAuto = _isAuto;
 
   camera->funcs.enumerateFrameSizes = oaSXCameraGetFrameSizes;
   camera->funcs.getFramePixelFormat = oaSXCameraGetFramePixelFormat;
+	camera->funcs.testROISize = oaSXCameraTestROISize;
 }
 
 

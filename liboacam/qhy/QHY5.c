@@ -2,7 +2,7 @@
  *
  * QHY5.c -- QHY5 camera interface
  *
- * Copyright 2013,2014,2015,2017,2018
+ * Copyright 2013,2014,2015,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -99,8 +99,8 @@ _QHY5InitCamera ( oaCamera* camera )
   cameraInfo->buffers = 0;
   cameraInfo->configuredBuffers = 0;
 
-  camera->features.ROI = 0;
-  camera->features.hasReset = 1;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
+  camera->features.flags |= OA_CAM_FEATURE_STREAMING;
   camera->features.pixelSizeX = 5200;
   camera->features.pixelSizeY = 5200;
 
@@ -158,6 +158,8 @@ _QHY5InitCamera ( oaCamera* camera )
     for ( j = 0; j < OA_CAM_BUFFERS; j++ ) {
       free (( void* ) cameraInfo->buffers[j].start );
     }
+    free (( void* ) cameraInfo->buffers );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
     free ( cameraInfo->xferBuffer );
     free (( void* ) camera->_common );
     free (( void* ) camera->_private );
@@ -176,6 +178,8 @@ _QHY5InitCamera ( oaCamera* camera )
     for ( j = 0; j < OA_CAM_BUFFERS; j++ ) {
       free (( void* ) cameraInfo->buffers[j].start );
     }
+    free (( void* ) cameraInfo->buffers );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
     free ( cameraInfo->xferBuffer );
     free (( void* ) camera->_common );
     free (( void* ) camera->_private );

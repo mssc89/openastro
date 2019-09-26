@@ -2,7 +2,7 @@
  *
  * QHYconnect.c -- Initialise QHY cameras
  *
- * Copyright 2013,2014,2015,2017,2018
+ * Copyright 2013,2014,2015,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -81,28 +81,11 @@ oaQHYInitCamera ( oaCameraDevice* device )
       break;
   }
 
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( QHY_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
-  if (!( cameraInfo = ( QHY_STATE* ) malloc ( sizeof ( QHY_STATE )))) {
-    free (( void* ) camera );
-    perror ( "malloc QHY_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
-    perror ( "malloc COMMON_INFO failed" );
-    return 0;
-  }
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
 
-  _oaInitCameraFunctionPointers ( camera );
   _QHYInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
@@ -120,15 +103,11 @@ oaQHYInitCamera ( oaCameraDevice* device )
     libusb_exit ( cameraInfo->usbContext );
     if ( numUSBDevices ) {
       fprintf ( stderr, "Can't see any USB devices now (list returns -1)\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     fprintf ( stderr, "Can't see any USB devices now\n" );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -141,9 +120,7 @@ oaQHYInitCamera ( oaCameraDevice* device )
       libusb_free_device_list ( devlist, 1 );
       libusb_exit ( cameraInfo->usbContext );
       fprintf ( stderr, "get device descriptor failed\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     if ( desc.idVendor == cameraList[ devInfo->misc ].vendorId &&
@@ -159,22 +136,19 @@ oaQHYInitCamera ( oaCameraDevice* device )
   if ( !matched ) {
     fprintf ( stderr, "No matching USB device found!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( !usbHandle ) {
     fprintf ( stderr, "Unable to open USB device!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
   if ( libusb_kernel_driver_active ( usbHandle, 0 )) {
-      libusb_detach_kernel_driver( usbHandle, 0 );
+		// FIX ME -- should reattach this if we detached it
+    libusb_detach_kernel_driver( usbHandle, 0 );
   }
 
   if (( ret = libusb_set_configuration ( usbHandle, 1 ))) {
@@ -182,17 +156,13 @@ oaQHYInitCamera ( oaCameraDevice* device )
         ret );
     fprintf ( stderr, "Try unplugging and reconnecting the device?\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( libusb_claim_interface ( usbHandle, 0 )) {
     fprintf ( stderr, "Unable to claim interface for USB device!\n" );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -202,9 +172,7 @@ oaQHYInitCamera ( oaCameraDevice* device )
       fprintf ( stderr, "Unable to set alternate interface for USB device!\n" );
       libusb_release_interface ( cameraInfo->usbHandle, 0 );
       libusb_exit ( cameraInfo->usbContext );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -250,9 +218,7 @@ oaQHYInitCamera ( oaCameraDevice* device )
   if ( ret ) {
     libusb_release_interface ( cameraInfo->usbHandle, 0 );
     libusb_exit ( cameraInfo->usbContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     camera = 0;
   }
 

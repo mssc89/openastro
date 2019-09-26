@@ -2,7 +2,7 @@
  *
  * QHYcontrol.c -- control functions for QHY cameras
  *
- * Copyright 2014,2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -172,7 +172,7 @@ oaQHYCameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaQHYCameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND    command;
   CALLBACK      callbackData;
@@ -185,7 +185,7 @@ oaQHYCameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -221,7 +221,7 @@ oaQHYCameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "QHY: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

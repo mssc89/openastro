@@ -2,7 +2,7 @@
  *
  * UVCconnect.c -- Initialise UVC cameras
  *
- * Copyright 2014,2015,2016,2017,2018
+ * Copyright 2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -40,6 +40,7 @@
 #include "UVC.h"
 #include "UVCoacam.h"
 #include "UVCstate.h"
+#include "UVCprivate.h"
 #include "UVCExtnUnits.h"
 
 
@@ -47,7 +48,7 @@
 // This is required because the bitmap of known controls in the
 // processing units does not match the id of the control.  Gah!!!
 
-struct puCtrl controlData[] = {
+struct puCtrl UVCControlData[] = {
   {
     .uvcControl		= UVC_PU_BRIGHTNESS_CONTROL,
     .oaControl		= OA_CAM_CTRL_BRIGHTNESS,
@@ -146,7 +147,8 @@ struct puCtrl controlData[] = {
   }
 };
 
-unsigned int numPUControls = sizeof ( controlData ) / sizeof ( struct puCtrl );
+unsigned int numPUControls = sizeof ( UVCControlData ) /
+		sizeof ( struct puCtrl );
 
 static void _UVCInitFunctionPointers ( oaCamera* );
 static void _getUVCControlValues ( oaCamera*, uvc_device_handle_t*,
@@ -185,29 +187,13 @@ oaUVCInitCamera ( oaCameraDevice* device )
   DEVICE_INFO*				devInfo;
   UVC_STATE*				cameraInfo;
   COMMON_INFO*				commonInfo;
+	void*							tmpPtr;
 
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
-    return 0;
-  }
-  if (!( cameraInfo = ( UVC_STATE* ) malloc ( sizeof ( UVC_STATE )))) {
-    free ( camera );
-    perror ( "malloc UVC_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free ( cameraInfo );
-    free ( camera );
-    perror ( "malloc COMMON_INFO failed" );
-    return 0;
-  }
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
+	if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+			sizeof ( UVC_STATE ), &commonInfo ) != OA_ERR_NONE ) {
+		return 0;
+	}
 
-  _oaInitCameraFunctionPointers ( camera );
   _UVCInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
@@ -218,38 +204,30 @@ oaUVCInitCamera ( oaCameraDevice* device )
   // FIX ME -- This is a bit ugly.  Much of it is repeated from the
   // getCameras function.  I should join the two together somehow.
 
-  if ( uvc_init ( &cameraInfo->uvcContext, 0 ) != UVC_SUCCESS ) {
+  if ( p_uvc_init ( &cameraInfo->uvcContext, 0 ) != UVC_SUCCESS ) {
     fprintf ( stderr, "uvc_init failed\n" );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
-  if ( uvc_get_device_list ( cameraInfo->uvcContext, &devlist ) !=
+  if ( p_uvc_get_device_list ( cameraInfo->uvcContext, &devlist ) !=
       UVC_SUCCESS ) {
     fprintf ( stderr, "uvc_get_device_list failed\n" );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   numUVCDevices = 0;
   while ( devlist[numUVCDevices] ) { numUVCDevices++; }
   if ( numUVCDevices < 1 ) {
-    uvc_free_device_list ( devlist, 1 );
-    uvc_exit ( cameraInfo->uvcContext );
+    p_uvc_free_device_list ( devlist, 1 );
+    p_uvc_exit ( cameraInfo->uvcContext );
     if ( numUVCDevices ) {
       fprintf ( stderr, "Can't see any UVC devices now (list returns -1)\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
     fprintf ( stderr, "Can't see any UVC devices now\n" );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -259,55 +237,45 @@ oaUVCInitCamera ( oaCameraDevice* device )
 
   for ( i = 0; i < numUVCDevices && !matched; i++ ) {
     uvcDevice = devlist[i];
-    if ( uvc_get_device_descriptor ( uvcDevice, &desc )) {
-      uvc_free_device_list ( devlist, 1 );
-      uvc_exit ( cameraInfo->uvcContext );
+    if ( p_uvc_get_device_descriptor ( uvcDevice, &desc )) {
+      p_uvc_free_device_list ( devlist, 1 );
+      p_uvc_exit ( cameraInfo->uvcContext );
       fprintf ( stderr, "get UVC device descriptor failed\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
-    if ( uvc_get_bus_number ( uvcDevice ) == deviceBus &&
-        uvc_get_device_address ( uvcDevice ) == deviceAddr ) {
+    if ( p_uvc_get_bus_number ( uvcDevice ) == deviceBus &&
+        p_uvc_get_device_address ( uvcDevice ) == deviceAddr ) {
       // this looks like the one!
-      if ( uvc_open ( uvcDevice, &uvcHandle ) != UVC_SUCCESS ) {
-        uvc_free_device_list ( devlist, 1 );
-        uvc_exit ( cameraInfo->uvcContext );
+      if ( p_uvc_open ( uvcDevice, &uvcHandle ) != UVC_SUCCESS ) {
+        p_uvc_free_device_list ( devlist, 1 );
+        p_uvc_exit ( cameraInfo->uvcContext );
         fprintf ( stderr, "open of UVC device failed\n" );
-        free (( void* ) commonInfo );
-        free (( void* ) cameraInfo );
-        free (( void* ) camera );
+        FREE_DATA_STRUCTS;
         return 0;
       }
       matched = 1;
     }
   }
-  uvc_free_device_list ( devlist, 1 );
+  p_uvc_free_device_list ( devlist, 1 );
 
   if ( !matched ) {
     fprintf ( stderr, "No matching UVC device found!\n" );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( !uvcHandle ) {
     fprintf ( stderr, "Unable to open UVC device!\n" );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
-  if (!( inputTerminals = uvc_get_input_terminals ( uvcHandle ))) {
+  if (!( inputTerminals = p_uvc_get_input_terminals ( uvcHandle ))) {
     fprintf ( stderr, "No input terminals found!\n" );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -323,12 +291,10 @@ oaUVCInitCamera ( oaCameraDevice* device )
   } while ( !haveCamera && cameraTerminal );
 
   if ( !haveCamera ) {
-    uvc_close ( uvcHandle );
+    p_uvc_close ( uvcHandle );
     fprintf ( stderr, "Device doesn't actually look like a camera\n" );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -349,7 +315,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         {
           uint32_t val_u32;
 
-          if ( uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_DEF ) !=
+          if ( p_uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for scanning mode\n" );
           }
@@ -370,54 +336,37 @@ oaUVCInitCamera ( oaCameraDevice* device )
           // fortunately the exponents of the bit values correspond to the
           // menu values we're using
 
-          uint8_t uvcdef, def, modes;
+          uint8_t uvcdef, modes, minSet;
 
-          if ( uvc_get_ae_mode ( uvcHandle, &modes, UVC_GET_RES ) !=
+          if ( p_uvc_get_ae_mode ( uvcHandle, &modes, UVC_GET_RES ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get modes for autoexp setting\n" );
           }
 
           cameraInfo->numAutoExposureItems = 0;
+					minSet = 0;
           for ( k = 0, mask = 1; k < 4; k++, mask <<= 1 ) {
             if ( modes & mask ) {
               cameraInfo->autoExposureMenuItems[
                   cameraInfo->numAutoExposureItems++ ] = mask;
+							if ( !minSet ) {
+								commonInfo->OA_CAM_CTRL_AUTO_MIN(
+										OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = mask;
+								minSet = 1;
+							}
+							commonInfo->OA_CAM_CTRL_AUTO_MAX(
+									OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = mask;
             }
           }
 
           camera->OA_CAM_CTRL_AUTO_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
               OA_CTRL_TYPE_DISC_MENU;
-          commonInfo->OA_CAM_CTRL_AUTO_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
-              OA_EXPOSURE_AUTO;
-          commonInfo->OA_CAM_CTRL_AUTO_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
-              OA_EXPOSURE_APERTURE_PRIORITY;
-          commonInfo->OA_CAM_CTRL_AUTO_STEP( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
-              1;
-          if ( uvc_get_ae_mode ( uvcHandle, &uvcdef, UVC_GET_DEF ) !=
+          if ( p_uvc_get_ae_mode ( uvcHandle, &uvcdef, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for autoexp setting\n" );
           }
-          switch ( uvcdef ) {
-             case 1:
-               def = OA_EXPOSURE_MANUAL;
-               break;
-             case 2:
-               def = OA_EXPOSURE_AUTO;
-               break;
-             case 4:
-               def = OA_EXPOSURE_SHUTTER_PRIORITY;
-               break;
-             case 8:
-               def = OA_EXPOSURE_APERTURE_PRIORITY;
-               break;
-             default:
-               fprintf ( stderr, "Unexpected default auto exposure value %d\n",
-                   uvcdef );
-               def = OA_EXPOSURE_MANUAL; // just for the sake of it
-               break;
-          }
           commonInfo->OA_CAM_CTRL_AUTO_DEF( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
-              def;
+              uvcdef;
           break;
         }
         case UVC_CT_EXPOSURE_TIME_ABSOLUTE_CONTROL:
@@ -425,24 +374,25 @@ oaUVCInitCamera ( oaCameraDevice* device )
           uint32_t val_u32;
           camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
               OA_CTRL_TYPE_INT64;
-          if ( uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_MIN ) !=
+          if ( p_uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_MIN ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get min value for exposure\n" );
           }
-          commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = val_u32;
-          if ( uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_MAX ) !=
+          commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+							val_u32;
+          if ( p_uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_MAX ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get max value for exposure\n" );
           }
           commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
               val_u32;
-          if ( uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_RES ) !=
+          if ( p_uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_RES ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get resolution for exposure\n" );
           }
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
               val_u32;
-          if ( uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_DEF ) !=
+          if ( p_uvc_get_exposure_abs ( uvcHandle, &val_u32, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for exposure\n" );
           }
@@ -463,24 +413,24 @@ oaUVCInitCamera ( oaCameraDevice* device )
           uint16_t val_u16;
           camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_ZOOM_ABSOLUTE ) =
               OA_CTRL_TYPE_INT32;
-          if ( uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
+          if ( p_uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get min value for zoom abs\n" );
           }
           commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_ZOOM_ABSOLUTE ) = val_u16;
-          if ( uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
+          if ( p_uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get max value for zoom abs\n" );
           }
           commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_ZOOM_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
+          if ( p_uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get resolution for zoom abs\n" );
           }
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_ZOOM_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
+          if ( p_uvc_get_zoom_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for zoom abs\n" );
           }
@@ -505,24 +455,24 @@ oaUVCInitCamera ( oaCameraDevice* device )
           uint16_t val_u16;
           camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_FOCUS_ABSOLUTE ) =
               OA_CTRL_TYPE_INT32;
-          if ( uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
+          if ( p_uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get min value for AE setting\n" );
           }
           commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_FOCUS_ABSOLUTE ) = val_u16;
-          if ( uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
+          if ( p_uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get max value for AE setting\n" );
           }
           commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_FOCUS_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
+          if ( p_uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get resolution for AE setting\n" );
           }
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_FOCUS_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
+          if ( p_uvc_get_focus_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for AE setting\n" );
           }
@@ -539,19 +489,19 @@ oaUVCInitCamera ( oaCameraDevice* device )
           // options exist
 
           autoFocusType = OA_CTRL_TYPE_BOOLEAN;
-          if ( uvc_get_focus_auto ( uvcHandle, &autoFocusMin, UVC_GET_MIN )
+          if ( p_uvc_get_focus_auto ( uvcHandle, &autoFocusMin, UVC_GET_MIN )
               != UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get min value for autofocus\n" );
           }
-          if ( uvc_get_focus_auto ( uvcHandle, &autoFocusMax, UVC_GET_MAX )
+          if ( p_uvc_get_focus_auto ( uvcHandle, &autoFocusMax, UVC_GET_MAX )
               != UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get max value for autofocus\n" );
           }
-          if ( uvc_get_focus_auto ( uvcHandle, &autoFocusStep, UVC_GET_RES )
+          if ( p_uvc_get_focus_auto ( uvcHandle, &autoFocusStep, UVC_GET_RES )
               != UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get resolution for autofocus\n" );
           }
-          if ( uvc_get_focus_auto ( uvcHandle, &autoFocusDef, UVC_GET_DEF )
+          if ( p_uvc_get_focus_auto ( uvcHandle, &autoFocusDef, UVC_GET_DEF )
               != UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get default for autofocus\n" );
           }
@@ -563,24 +513,24 @@ oaUVCInitCamera ( oaCameraDevice* device )
           uint16_t val_u16;
           camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_IRIS_ABSOLUTE ) =
               OA_CTRL_TYPE_INT32;
-          if ( uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
+          if ( p_uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_MIN ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get min value for iris abs\n" );
           }
           commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_IRIS_ABSOLUTE ) = val_u16;
-          if ( uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
+          if ( p_uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_MAX ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get max value for iris abs\n" );
           }
           commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_IRIS_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
+          if ( p_uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_RES ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get resolution for iris abs\n" );
           }
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_IRIS_ABSOLUTE ) =
               val_u16;
-          if ( uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
+          if ( p_uvc_get_iris_abs ( uvcHandle, &val_u16, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for iris abs\n" );
           }
@@ -611,7 +561,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_PAN_ABSOLUTE ) =
               commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_TILT_ABSOLUTE ) = 1;
 
-          if ( uvc_get_pantilt_abs ( uvcHandle, &defPan, &defTilt,
+          if ( p_uvc_get_pantilt_abs ( uvcHandle, &defPan, &defTilt,
               UVC_GET_DEF ) != UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get default for pan/tilt default\n" );
           }
@@ -634,7 +584,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
           commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_ROLL_ABSOLUTE ) = 180;
           commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_ROLL_ABSOLUTE ) = 1;
 
-          if ( uvc_get_roll_abs ( uvcHandle, &val_s16, UVC_GET_DEF ) !=
+          if ( p_uvc_get_roll_abs ( uvcHandle, &val_s16, UVC_GET_DEF ) !=
               UVC_SUCCESS ) { 
             fprintf ( stderr, "failed to get default for roll default\n" );
           }
@@ -646,7 +596,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         {
           uint8_t val_u8;
 
-          if ( uvc_get_privacy ( uvcHandle, &val_u8, UVC_GET_DEF ) !=
+          if ( p_uvc_get_privacy ( uvcHandle, &val_u8, UVC_GET_DEF ) !=
               UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for privacy mode\n" );
           }
@@ -665,7 +615,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         {
           uint8_t val_u8;
 
-          if ( uvc_get_focus_simple_range ( uvcHandle, &val_u8,
+          if ( p_uvc_get_focus_simple_range ( uvcHandle, &val_u8,
               UVC_GET_DEF ) != UVC_SUCCESS ) {
             fprintf ( stderr, "failed to get default for simple focus\n" );
           }
@@ -762,12 +712,10 @@ oaUVCInitCamera ( oaCameraDevice* device )
     }
   }
 
-  if (!( processingUnits = uvc_get_processing_units ( uvcHandle ))) {
+  if (!( processingUnits = p_uvc_get_processing_units ( uvcHandle ))) {
     fprintf ( stderr, "No processing units found!\n" );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -784,22 +732,20 @@ oaUVCInitCamera ( oaCameraDevice* device )
 
   if ( !haveUnit ) {
     fprintf ( stderr, "Can't find any processing units for the camera\n" );
-    uvc_close ( uvcHandle );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_close ( uvcHandle );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
   flags = unit->bmControls;
   cameraInfo->haveComponentWhiteBalance = 0;
-  numPUControls = sizeof ( controlData ) / sizeof ( struct puCtrl );
+  numPUControls = sizeof ( UVCControlData ) / sizeof ( struct puCtrl );
   for ( i = 0; i < numPUControls; i++ ) {
     if ( flags & 1 ) {
       // FIX ME -- remove these two temp variables
-      uvcControl = controlData[ i ].uvcControl;
-      oaControl = controlData[ i ].oaControl;
+      uvcControl = UVCControlData[ i ].uvcControl;
+      oaControl = UVCControlData[ i ].oaControl;
       // if oaControl == 0 we don't support this yet, but white balance
       // component is a special case because it is red and blue balance
       // combined
@@ -822,7 +768,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
     fprintf ( stderr, "unknown UVC processing unit controls are present\n" );
   }
 
-  if (( extensionUnits = uvc_get_extension_units ( uvcHandle ))) {
+  if (( extensionUnits = p_uvc_get_extension_units ( uvcHandle ))) {
     fprintf ( stderr, "Extension units found\n" );
     extn = extensionUnits;
     do {
@@ -864,8 +810,9 @@ oaUVCInitCamera ( oaCameraDevice* device )
   cameraInfo->currentFrameFormat = 0;
   cameraInfo->bytesPerPixel = 0;
   cameraInfo->isColour = 0;
-  camera->features.rawMode = camera->features.demosaicMode = 0;
-  camera->features.hasReset = 1;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
+  camera->features.flags |= OA_CAM_FEATURE_READABLE_CONTROLS;
+  camera->features.flags |= OA_CAM_FEATURE_STREAMING;
 
   /*
    * For the time being we know that libuvc knows about:
@@ -874,7 +821,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
    * BY8 is in fact GBRG and BA81 is BGGR
    */
 
-  formatDescs = uvc_get_format_descs ( uvcHandle );
+  formatDescs = p_uvc_get_format_descs ( uvcHandle );
   format = formatDescs;
   cameraInfo->maxBytesPerPixel = cameraInfo->bytesPerPixel = 1;
   do {
@@ -883,7 +830,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
       case UVC_VS_FORMAT_FRAME_BASED:
 
         if ( !memcmp ( format->fourccFormat, "BY8 ", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_GBRG8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_GBRG8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_GBRG8 ] =
@@ -897,7 +844,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         }
 
         if ( !memcmp ( format->fourccFormat, "BA81", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_BGGR8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_BGGR8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_BGGR8 ] =
@@ -911,7 +858,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         }
 
         if ( !memcmp ( format->fourccFormat, "GRBG", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_GRBG8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_GRBG8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_GRBG8 ] =
@@ -925,7 +872,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         }
 
         if ( !memcmp ( format->fourccFormat, "GBRG", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_GBRG8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_GBRG8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_GBRG8 ] =
@@ -939,7 +886,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         }
 
         if ( !memcmp ( format->fourccFormat, "RGGB", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_RGGB8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_RGGB8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_RGGB8 ] =
@@ -953,7 +900,7 @@ oaUVCInitCamera ( oaCameraDevice* device )
         }
 
         if ( !memcmp ( format->fourccFormat, "BGGR", 4 )) {
-          camera->features.rawMode = 1;
+					camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
           camera->frameFormats[ OA_PIX_FMT_BGGR8 ] = 1;
           cameraInfo->frameFormatMap[ OA_PIX_FMT_BGGR8 ] = format;
           cameraInfo->frameFormatIdMap[ OA_PIX_FMT_BGGR8 ] =
@@ -1048,11 +995,9 @@ oaUVCInitCamera ( oaCameraDevice* device )
   if ( !cameraInfo->currentFrameFormat ) {
     fprintf ( stderr, "No suitable video format found on %s\n",
       camera->deviceName );
-    uvc_close ( uvcHandle );
-    uvc_exit ( cameraInfo->uvcContext );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    p_uvc_close ( uvcHandle );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -1066,16 +1011,15 @@ oaUVCInitCamera ( oaCameraDevice* device )
   allFramesHaveFixedRates = 1;
   i = 0;
   do {
-    if (!(  cameraInfo->frameSizes[1].sizes = realloc (
-        cameraInfo->frameSizes[1].sizes, ( i+1 ) * sizeof ( FRAMESIZE )))) {
-      uvc_close ( uvcHandle );
-      uvc_exit ( cameraInfo->uvcContext );
+    if (!(  tmpPtr = realloc ( cameraInfo->frameSizes[1].sizes,
+				( i+1 ) * sizeof ( FRAMESIZE )))) {
+      p_uvc_close ( uvcHandle );
+      p_uvc_exit ( cameraInfo->uvcContext );
       fprintf ( stderr, "realloc of frameSizes failed\n" );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
+		cameraInfo->frameSizes[1].sizes = tmpPtr;
 
     if (( cameraInfo->frameSizes[1].sizes[i].x = frame->wWidth ) >
         cameraInfo->maxResolutionX ) {
@@ -1093,7 +1037,10 @@ oaUVCInitCamera ( oaCameraDevice* device )
   } while ( frame );
   cameraInfo->frameSizes[1].numSizes = i;
 
-  camera->features.frameRates = allFramesHaveFixedRates;
+  if ( allFramesHaveFixedRates ) {
+		camera->features.flags |= OA_CAM_FEATURE_FRAME_RATES;
+	}
+	camera->features.flags |= OA_CAM_FEATURE_FIXED_FRAME_SIZES;
   cameraInfo->frameRates.numRates = 0;
 
   camera->interface = device->interface;
@@ -1127,15 +1074,13 @@ oaUVCInitCamera ( oaCameraDevice* device )
       if ( i ) {
         for ( j = 0; j < i; j++ ) {
           free (( void* ) cameraInfo->buffers[j].start );
-          cameraInfo->buffers[j].start = 0;
         }
       }
-      uvc_close ( uvcHandle );
-      uvc_exit ( cameraInfo->uvcContext );
+      p_uvc_close ( uvcHandle );
+      p_uvc_exit ( cameraInfo->uvcContext );
       free (( void* ) cameraInfo->frameSizes[1].sizes );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      free (( void* ) cameraInfo->buffers );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
@@ -1156,14 +1101,16 @@ oaUVCInitCamera ( oaCameraDevice* device )
 
   if ( pthread_create ( &( cameraInfo->controllerThread ), 0,
       oacamUVCcontroller, ( void* ) camera )) {
-    uvc_close ( uvcHandle );
-    uvc_exit ( cameraInfo->uvcContext );
+    p_uvc_close ( uvcHandle );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    for ( j = 0; j < OA_CAM_BUFFERS; j++ ) {
+      free (( void* ) cameraInfo->buffers[j].start );
+    }
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+    free (( void* ) cameraInfo->buffers );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     fprintf ( stderr, "controller thread creation failed\n" );
     return 0;
   }
@@ -1174,15 +1121,17 @@ oaUVCInitCamera ( oaCameraDevice* device )
     cameraInfo->stopControllerThread = 1;
     pthread_cond_broadcast ( &cameraInfo->commandQueued );
     pthread_join ( cameraInfo->controllerThread, &dummy );
-    uvc_close ( uvcHandle );
-    uvc_exit ( cameraInfo->uvcContext );
+    p_uvc_close ( uvcHandle );
+    p_uvc_exit ( cameraInfo->uvcContext );
+    for ( j = 0; j < OA_CAM_BUFFERS; j++ ) {
+      free (( void* ) cameraInfo->buffers[j].start );
+    }
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
-    fprintf ( stderr, "callback thread creation failed\n" );
+    free (( void* ) cameraInfo->buffers );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
+    fprintf ( stderr, "callback thread creation failed\n" );
     return 0;
   }
 
@@ -1230,9 +1179,9 @@ _getUVCControlValues ( oaCamera* camera, uvc_device_handle_t* uvcHandle,
   enum uvc_pu_ctrl_selector	uvcControl;
   COMMON_INFO*			commonInfo = camera->_common;
 
-  uvcControl = controlData[ index ].uvcControl;
-  oaControl = controlData[ index ].oaControl;
-  len = controlData[ index ].size;
+  uvcControl = UVCControlData[ index ].uvcControl;
+  oaControl = UVCControlData[ index ].oaControl;
+  len = UVCControlData[ index ].size;
 
   // special case for white component control
   if ( UVC_PU_WHITE_BALANCE_COMPONENT_CONTROL == uvcControl ) {
@@ -1273,7 +1222,8 @@ _getUVCControlValues ( oaCamera* camera, uvc_device_handle_t* uvcHandle,
 
     int val;
 
-    camera->OA_CAM_CTRL_TYPE( oaControl ) = controlData[ index ].oaControlType;
+    camera->OA_CAM_CTRL_TYPE( oaControl ) =
+				UVCControlData[ index ].oaControlType;
 
     switch ( camera->OA_CAM_CTRL_TYPE( oaControl )) {
       case OA_CTRL_TYPE_INT32:
@@ -1342,7 +1292,7 @@ oaUVCCloseCamera ( oaCamera* camera )
     pthread_cond_broadcast ( &cameraInfo->callbackQueued );
     pthread_join ( cameraInfo->callbackThread, &dummy );
 
-    uvc_close ( cameraInfo->uvcHandle );
+    p_uvc_close ( cameraInfo->uvcHandle );
 
     if ( cameraInfo->buffers ) {
       for ( j = 0; j < OA_CAM_BUFFERS; j++ ) {
@@ -1365,7 +1315,7 @@ oaUVCCloseCamera ( oaCamera* camera )
     free (( void* ) camera->_common );
     free (( void* ) camera );
 
-    // uvc_unref_device ( device );
+    // p_uvc_unref_device ( device );
 
   } else {
    return -OA_ERR_INVALID_CAMERA;

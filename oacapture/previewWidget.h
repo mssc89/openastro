@@ -2,7 +2,7 @@
  *
  * previewWidget.h -- class declaration
  *
- * Copyright 2013,2014,2015,2016,2018
+ * Copyright 2013,2014,2015,2016,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -29,7 +29,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtCore>
@@ -64,7 +64,7 @@ class PreviewWidget : public QFrame
     void		enableDemosaic ( int );
     void		enableScreenUpdates ( int );
     void		setDisplayFPS ( int );
-    static void*	updatePreview ( void*, void*, int );
+    static void*	updatePreview ( void*, void*, int, void* );
     void		setFirstFrameTime ( void );
     void		beginRecording ( void );
     void		forceRecordingStop ( void );
@@ -87,6 +87,7 @@ class PreviewWidget : public QFrame
     void		updateDisplay ( void );
     void		stopRecording ( void );
     void		frameWriteFailed ( void );
+    void		updateAutoControls ( void );
 
   private:
     QImage		image;
@@ -103,6 +104,7 @@ class PreviewWidget : public QFrame
     unsigned long	fpsCalcPeriodStartTime;
     long		secondForTemperature;
     long		secondForDropped;
+    long		secondForAutoControls;
     int			hasTemp;
     int			hasDroppedFrames;
     int			reticleCentreX;
@@ -131,10 +133,6 @@ class PreviewWidget : public QFrame
     int			manualStop;
     int			focusScore;
 
-    void		processFlip ( void*, int, int );
-    void		processFlip8Bit ( uint8_t*, int );
-    void		processFlip16Bit ( uint8_t*, int );
-    void		processFlip24BitColour ( uint8_t*, int );
     unsigned int	reduceTo8Bit ( void*, void*, int, int, int );
     void		mousePressEvent ( QMouseEvent* );
     void		mouseMoveEvent ( QMouseEvent* );

@@ -2,7 +2,7 @@
  *
  * state.h -- global application state datastructures
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -37,9 +37,7 @@
 #include "settingsWidget.h"
 #include "focusOverlay.h"
 #include "advancedSettings.h"
-#include "camera.h"
-#include "filterWheel.h"
-#include "timer.h"
+
 
 typedef struct
 {
@@ -50,27 +48,12 @@ typedef struct
   ImageWidget*		imageWidget;
   ZoomWidget*		zoomWidget;
   CameraWidget*		cameraWidget;
-  int			libavStarted; // has libav* been initialised?
   int			histogramOn;
+  int			histogramSignalConnected;
   HistogramWidget*	histogramWidget;
   SettingsWidget*	settingsWidget;
   AdvancedSettings*	advancedSettings;
   FocusOverlay*		focusOverlay;
-
-  Camera*		camera;
-  FilterWheel*		filterWheel;
-  Timer*		timer;
-
-  int			generalSettingsIndex;
-  int			captureSettingsIndex;
-  int			cameraSettingsIndex;
-  int			profileSettingsIndex;
-  int			filterSettingsIndex;
-  int			autorunSettingsIndex;
-  int			histogramSettingsIndex;
-  int			demosaicSettingsIndex;
-  int			fitsSettingsIndex;
-  int			timerSettingsIndex;
 
   int			autorunEnabled;
   int			autorunRemaining;
@@ -81,8 +64,6 @@ typedef struct
   QString		lastRecordedFile;
   QString		currentDirectory;
 
-  unsigned long long	captureIndex;
-
   unsigned int		needGroupBoxBorders;
 
   unsigned long		firstFrameTime;
@@ -92,45 +73,9 @@ typedef struct
   int			preferredExposureControl;
 
   QString		appPath;
-
-  int			cameraTempValid;
-  float			cameraTemp;
-  int			binningValid;
-  int			binModeX;
-  int			binModeY;
-
-  int			gpsValid;
-  double		longitude;
-  double		latitude;
-  double		altitude;
-
 } STATE;
 
 extern STATE		state;
-
-#define	RETICLE_CIRCLE		1
-#define	RETICLE_CROSS		2
-#define	RETICLE_TRAMLINES	3
-
-#define QUICKTIME_OK(f)	(( f == OA_PIX_FMT_RGB24 ) || \
-    ( f == OA_PIX_FMT_BGR24 ) || ( f == OA_PIX_FMT_GREY16BE ) || \
-    ( f == OA_PIX_FMT_GREY16LE ) || ( f == OA_PIX_FMT_RGB48BE ) || \
-    ( f == OA_PIX_FMT_GREY8 ))
-
-#define UTVIDEO_OK(f) (!(( f == OA_PIX_FMT_GREY8 ) || \
-    ( f == OA_PIX_FMT_GREY16LE ) || ( f == OA_PIX_FMT_GREY16BE ) || \
-    ( f == OA_PIX_FMT_BGGR8 ) || ( f == OA_PIX_FMT_RGGB8 ) || \
-    ( f == OA_PIX_FMT_GRBG8 ) || ( f == OA_PIX_FMT_GBRG8 ) || \
-    ( f == OA_PIX_FMT_BGGR16LE ) || ( f == OA_PIX_FMT_BGGR16BE ) || \
-    ( f == OA_PIX_FMT_RGGB16LE ) || ( f == OA_PIX_FMT_RGGB16BE ) || \
-    ( f == OA_PIX_FMT_GBRG16LE ) || ( f == OA_PIX_FMT_GBRG16BE ) || \
-    ( f == OA_PIX_FMT_GRBG16LE ) || ( f == OA_PIX_FMT_GRBG16BE ) || \
-    ( f == OA_PIX_FMT_YUYV )))
-
-#define WINDIB_OK(f) (( f == OA_PIX_FMT_GREY8 ) || \
-    ( f == OA_PIX_FMT_BGGR8 ) || ( f == OA_PIX_FMT_RGGB8 ) || \
-    ( f == OA_PIX_FMT_GRBG8 ) || ( f == OA_PIX_FMT_GBRG8 ))
-
 
 #define TOP_WIDGET ( state.settingsWidget ? state.settingsWidget->getTabset() :\
     ( state.mainWindow ? ( QWidget* ) state.mainWindow : ( QWidget* ) this ))

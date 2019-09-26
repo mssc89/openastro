@@ -2,7 +2,8 @@
  *
  * ptrController.c -- PTR device control functions
  *
- * Copyright 2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -50,8 +51,10 @@ static int	_processPTRStart ( PRIVATE_INFO*, OA_COMMAND* );
 static int	_processPTRStop ( PRIVATE_INFO* );
 static int	_processTimestampFetch ( PRIVATE_INFO*, OA_COMMAND* );
 static int	_processGPSFetch ( PRIVATE_INFO*, OA_COMMAND* );
+static int	_processGPSFetchCached ( PRIVATE_INFO*, OA_COMMAND* );
 static int	_doSync ( PRIVATE_INFO* );
 static int	_readTimestamp ( uint32_t, int, char* );
+static int	_processTimestampGPSData ( PRIVATE_INFO*, const char* );
 
 
 void*
@@ -64,14 +67,21 @@ oaPTRcontroller ( void* param )
   int			resultCode, running = 0;
   fd_set		readable;
   struct timeval	timeout;
-  // use the longest version here
-  char			readBuffer[ PTR_TIMESTAMP_BUFFER_LEN_V1_1 + 1 ];
+  // use the longest version here, and pad it a bit
+  char			readBuffer[ PTR_TIMESTAMP_BUFFER_LEN_V2 + 16 ];
   char			numberBuffer[ 8 ];
   int			frameNumber, numRead, available, i;
-  int			timestampLength;
+  int			timestampLength, timestampOffset;
 
-  timestampLength = ( deviceInfo->version < 0x0101 ) ?
-      PTR_TIMESTAMP_BUFFER_LEN_V1_0 : PTR_TIMESTAMP_BUFFER_LEN_V1_1;
+  if ( deviceInfo->version < 0x0101 ) {
+    timestampLength = PTR_TIMESTAMP_BUFFER_LEN_V1_0;
+  } else {
+    if ( deviceInfo->version < 0x0200 ) {
+      timestampLength = PTR_TIMESTAMP_BUFFER_LEN_V1_1;
+    } else {
+      timestampLength = PTR_TIMESTAMP_BUFFER_LEN_V2;
+    }
+  }
   timeout.tv_sec = 0;
   timeout.tv_usec = 10000;
   do {
@@ -114,12 +124,6 @@ oaPTRcontroller ( void* param )
           }
           fprintf ( stderr, ")\n" );
         } else {
-          readBuffer[numRead] = 0;
-          numRead--;
-          while ( readBuffer[numRead] == '\r' ||
-              readBuffer[numRead] == '\n' ) {
-            readBuffer[numRead--] = 0;
-          }
           if (( readBuffer[0] != 'T' && readBuffer[0] != 'S' ) ||
               readBuffer[1] != ':' || readBuffer[8] != ':' ) {
             if ( strncmp ( readBuffer, "Acquisition sequence complete", 29 )) {
@@ -133,13 +137,19 @@ oaPTRcontroller ( void* param )
               fprintf ( stderr, "%s: read timestamp %d, expected %d\n",
                   __FUNCTION__, frameNumber, deviceInfo->timestampExpected );
             } else {
+	      timestampOffset = 9;
+	      if ( deviceInfo->version >= 0x0200 ) {
+                timestampOffset = _processTimestampGPSData ( deviceInfo,
+		    readBuffer + 9 ) + 9;
+              }
               pthread_mutex_lock ( &deviceInfo->callbackQueueMutex );
               available = deviceInfo->timestampsAvailable;
               pthread_mutex_unlock ( &deviceInfo->callbackQueueMutex );
               if ( available < OA_TIMESTAMP_BUFFERS ) {
                 ( void ) strcpy ( deviceInfo->timestampBuffer[
                     ( deviceInfo->timestampExpected - 1 ) %
-                    OA_TIMESTAMP_BUFFERS ].timestamp, readBuffer + 9 );
+                    OA_TIMESTAMP_BUFFERS ].timestamp, readBuffer +
+										timestampOffset );
                 deviceInfo->timestampBuffer[( deviceInfo->timestampExpected -
                     1 ) % OA_TIMESTAMP_BUFFERS ].index = frameNumber;
                 pthread_mutex_lock ( &deviceInfo->callbackQueueMutex );
@@ -184,6 +194,11 @@ oaPTRcontroller ( void* param )
           case OA_CMD_DATA_GET:
             resultCode = _processTimestampFetch ( deviceInfo, command );
             break;
+          case OA_CMD_GPS_CACHE_GET:
+						if (( resultCode = _processGPSFetchCached ( deviceInfo, command ))
+								== OA_ERR_NONE ) {
+              break;
+						}
           case OA_CMD_GPS_GET:
             resultCode = _processGPSFetch ( deviceInfo, command );
             break;
@@ -262,6 +277,22 @@ _processSetControl ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
       }
       deviceInfo->requestedMode = val->menu;
       break;
+
+		case OA_TIMER_CTRL_EXT_LED_ENABLE:
+      if ( val->valueType != OA_CTRL_TYPE_BOOLEAN ) {
+        fprintf ( stderr, "%s: invalid control type %d where bool expected\n",
+            __FUNCTION__, val->valueType );
+        return -OA_ERR_INVALID_CONTROL_TYPE;
+      }
+			deviceInfo->externalLEDState = val->boolean;
+			if ( _ptrWrite ( deviceInfo->fd, deviceInfo->externalLEDState ?
+						"\022" : "\024", 1 )) {
+				fprintf ( stderr, "%s: failed to write ctrl-C to %s\n",
+				__FUNCTION__, deviceInfo->devicePath );
+				return -OA_ERR_SYSTEM_ERROR;
+			}
+			break;
+
   }
   return OA_ERR_NONE;
 }
@@ -271,7 +302,7 @@ static int
 _processGetControl ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
 {
   int			control = command->controlId;
-  oaControlValue*	val = command->commandData;
+  oaControlValue*	val = command->resultData;
 
   switch ( control ) {
 
@@ -289,6 +320,11 @@ _processGetControl ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
       val->valueType = OA_CTRL_TYPE_MENU;
       val->menu = deviceInfo->requestedMode;
       break;
+
+		case OA_TIMER_CTRL_EXT_LED_ENABLE:
+			val->valueType = OA_CTRL_TYPE_BOOLEAN;
+			val->boolean = deviceInfo->externalLEDState;
+			break;
 
     default:
       return -OA_ERR_INVALID_CONTROL;
@@ -408,7 +444,11 @@ _processPTRStart ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
       break;
 
     case OA_TIMER_MODE_STROBE:
-      sprintf ( commandStr, "strobe %d\r", deviceInfo->requestedCount );
+      if ( deviceInfo->version >= 0x0200 ) {
+        sprintf ( commandStr, "strobe -afe %d\r", deviceInfo->requestedCount );
+      } else {
+        sprintf ( commandStr, "strobe %d\r", deviceInfo->requestedCount );
+      }
       break;
 
     default:
@@ -598,144 +638,31 @@ _processTimestampFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
 static int
 _readTimestamp ( uint32_t version, int fd, char* buffer )
 {
-  int		readSoFar = 0, i, l, maxChars;
-  int		__attribute__((unused)) dummy;
-  char*		p = buffer;
-  char*		complete = "Acquisition sequence complete";
-  char		crlf[2];
+  int		readChars, maxlen, i;
 
-  // FIX ME -- this should be done far more neatly
-  // read what's available each time the select finishes in the caller,
-  // and once we have enough data to form a timestamp, add that to the
-  // queue
-
-  memset ( buffer, 0, ( version < 0x0101 ) ?
-      PTR_TIMESTAMP_BUFFER_LEN_V1_0 : PTR_TIMESTAMP_BUFFER_LEN_V1_1 );
-  *p = 0;
-  if ( read ( fd, p, 1 ) != 1 ) {
-    return readSoFar;
+	// pad the buffer size a bit
+  if ( version < 0x0101 ) {
+    maxlen = PTR_TIMESTAMP_BUFFER_LEN_V1_0 + 8;
   }
-  readSoFar++;
-
-  // We're expecting something that matches either of:
-  // "[ST]:\d{6}:\{8}T\d{6}.d{3}" (or the 1.1+ equivalent)
-  // "Acquisition sequence complete"
-
-  if ( *p != 'S' && *p != 'T' && *p != 'A' ) {
-    return readSoFar;
-  }
-
-  if ( *p == 'A' ) {
-    p++;
-    l = strlen ( complete );
-    for ( i = 1; i < l; i++ ) {
-      if ( read ( fd, p, 1 ) != 1 ) {
-        return readSoFar;
-      }
-      readSoFar++;
-      if ( *p != complete[i] ) {
-        return readSoFar;
-      }
-      p++;
-    }
-  } else {
-    p++;
-    // read ":"
-    if ( read ( fd, p, 1 ) != 1 ) {
-      return readSoFar;
-    }
-    readSoFar++;
-    if ( *p != ':' ) {
-      return readSoFar;
-    }
-    p++;
-    // read "\d{6}" (index number)
-    for ( i = 0; i < 6; i++ ) {
-      if ( read ( fd, p, 1 ) != 1 ) {
-        return readSoFar;
-      }
-      readSoFar++;
-      if ( !isdigit ( *p )) {
-        return readSoFar;
-      }
-      p++;
-    }
-    // read ":"
-    if ( read ( fd, p, 1 ) != 1 ) {
-      return readSoFar;
-    }
-    readSoFar++;
-    if ( *p != ':' ) {
-      return readSoFar;
-    }
-    p++;
-    // read "\d{8}" (YYYYMMDD) or "\d{4}-\d\d-\d\d" for PTR >= 1.1
-    maxChars = ( version >= 0x0101 ) ? 10 : 8;
-    for ( i = 0; i < maxChars; i++ ) {
-      if ( read ( fd, p, 1 ) != 1 ) {
-        return readSoFar;
-      }
-      readSoFar++;
-      if ( !isdigit ( *p )) {
-        if (!( version >= 0x0101 && ( i == 4 || i == 7 ) &&
-            *p == '-' )) {
-          return readSoFar;
-        }
-      }
-      p++;
-    }
-    // read "T"
-    if ( read ( fd, p, 1 ) != 1 ) {
-      return readSoFar;
-    }
-    readSoFar++;
-    if ( *p != 'T' ) {
-      return readSoFar;
-    }
-    p++;
-    // read "\d{6}" (HHmmss) or "\d\d:\d\d:\d\d"
-    maxChars = ( version >= 0x0101 ) ? 8 : 6;
-    for ( i = 0; i < maxChars; i++ ) {
-      if ( read ( fd, p, 1 ) != 1 ) {
-        return readSoFar;
-      }
-      readSoFar++;
-      if ( !isdigit ( *p )) {
-        if (!( version >= 0x0101 && ( i == 2 || i == 5 ) &&
-            *p == ':' )) {
-          return readSoFar;
-        }
-      }
-      p++;
-    }
-    // read "."
-    if ( read ( fd, p, 1 ) != 1 ) {
-      return readSoFar;
-    }
-    readSoFar++;
-    if ( *p != '.' ) {
-      return readSoFar;
-    }
-    p++;
-    // read "\d{3}" (milliseconds)
-    for ( i = 0; i < 3; i++ ) {
-      if ( read ( fd, p, 1 ) != 1 ) {
-        return readSoFar;
-      }
-      readSoFar++;
-      if ( !isdigit ( *p )) {
-        return readSoFar;
-      }
-      p++;
+  else {
+    if ( version < 0x0200 ) {
+      maxlen = PTR_TIMESTAMP_BUFFER_LEN_V1_1 + 8;
+    } else {
+      maxlen = PTR_TIMESTAMP_BUFFER_LEN_V2 + 8;
     }
   }
+  memset ( buffer, 0, maxlen + 1 );
 
-  // At this point the next two characters will be 0d 0a, so we read those
-  // and throw them
+  readChars = _ptrRead ( fd, buffer, maxlen + 1 );
+	if ( readChars ) {
+    i = readChars - 1;
+	  while ( buffer[i] == '\012' || buffer[i] == '\015' ) {
+			buffer[i--] = 0;
+			readChars--;
+		}
+	}
 
-  dummy = read ( fd, crlf, 2 );
-
-  return readSoFar;
+  return readChars;
 }
 
 
@@ -744,8 +671,13 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
 {
   char		commandStr[128], buffer[128];
   int		commandLen, readBytes;
-  double	latDeg, latMin, longDeg, longMin, alt;
   double*	r = command->resultData;
+#ifdef PTRV1
+	double	alt;
+  double	latDeg, latMin, longDeg, longMin;
+#endif
+
+#define STRLEN_GEO 44
 
   if ( deviceInfo->isRunning ) {
     return -OA_ERR_TIMER_RUNNING;
@@ -754,7 +686,7 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
   tcflush ( deviceInfo->fd, TCIFLUSH );
   // usleep ( 100000 );
 
-  ( void ) strcpy ( commandStr, "geo\r" );
+  ( void ) strcpy ( commandStr, "geo -afe\r" );
   commandLen = strlen ( commandStr );
   if ( _ptrWrite ( deviceInfo->fd, commandStr, commandLen )) {
     fprintf ( stderr, "%s: failed to write command:\n%s\n  to %s\n",
@@ -777,21 +709,19 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
     return -OA_ERR_SYSTEM_ERROR;
   }
 
+	memset ( buffer, 0, 128 );
+  readBytes = _ptrRead ( deviceInfo->fd, buffer, STRLEN_GEO );
+  if (readBytes != STRLEN_GEO) {
+    fprintf(stderr, "%s, failed to read response to 'geo' command\n",
+           __FUNCTION__);
+    fprintf(stderr, "readBytes = %d, buffer = \"%s\"\n", readBytes, buffer);
+    return -OA_ERR_SYSTEM_ERROR;
+  }
+
+#ifdef PTRV1
   // We expect to get a string back of the form:
   // G:+ddmm.mmmm,-dddmm.mmmm,aaa.a
   // where aaa does not have a fixed length.
-
-  memset ( buffer, 0, 128 );
-  if (( readBytes = _ptrRead ( deviceInfo->fd, buffer, 40 )) < 28 ) {
-    fprintf ( stderr, "%s, failed to read response to 'geo' command\n",
-        __FUNCTION__ );
-    if ( readBytes > 0 ) {
-      buffer[ readBytes ] = 0;
-      fprintf ( stderr, "  string read (%d bytes) = '%s'\n", readBytes,
-          buffer );
-    }
-    return -OA_ERR_SYSTEM_ERROR;
-  }
 
   if ( *buffer != 'G' || *( buffer + 1 ) != ':' ) {
     fprintf ( stderr, "%s, geo string '%s' has invalid format\n",
@@ -801,7 +731,7 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
 
   if ( sscanf ( buffer + 2, "%3lf%lf,%4lf%lf,%lf", &latDeg, &latMin, &longDeg,
       &longMin, &alt ) < 5 ) {
-    fprintf ( stderr, "%s, geo string '%s' fails to match expected format",
+    fprintf ( stderr, "%s, geo string '%s' fails to match expected format\n",
         __FUNCTION__, buffer + 2 );
   }
 
@@ -810,7 +740,18 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
 
   deviceInfo->latitude = latDeg + latMin / 60;
   deviceInfo->longitude = longDeg + longMin / 60;
-  deviceInfo->altitude = alt;
+#else
+  // We expect to get a string back of the form:
+  // [+-]d.dddddde+nn, [+-]d.dddddde+nn, [+-]d.dddddde+nn
+
+  if ( sscanf ( buffer, "%lf, %lf, %lf", &deviceInfo->latitude,
+			&deviceInfo->longitude, &deviceInfo->altitude ) != 3 ) {
+    fprintf ( stderr, "%s, geo string '%s' doesn't match expected format #1\n",
+        __FUNCTION__, buffer );
+  }
+#endif
+
+  deviceInfo->validGPS = 1;
 
   r[0] = deviceInfo->latitude;
   r[1] = deviceInfo->longitude;
@@ -820,4 +761,66 @@ _processGPSFetch ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
   usleep ( 100000 );
 
   return -OA_ERR_NONE;
+}
+
+
+static int
+_processGPSFetchCached ( PRIVATE_INFO* deviceInfo, OA_COMMAND* command )
+{
+  double*	r = command->resultData;
+
+  if ( !deviceInfo->validGPS ) {
+		return -OA_ERR_SYSTEM_ERROR;
+  }
+
+	r[0] = deviceInfo->latitude;
+  r[1] = deviceInfo->longitude;
+  r[2] = deviceInfo->altitude;
+	return OA_ERR_NONE;
+}
+
+
+static int
+_processTimestampGPSData ( PRIVATE_INFO* deviceInfo, const char* buffer )
+{
+	const char		*p = buffer;
+	if ( !*p ) return 0;
+  if ( *p == '+' || *p == ':' ) {
+		p++;
+	}
+	if ( !*p ) return 0;
+
+	if ( sscanf ( p, "%lf", &deviceInfo->latitude ) != 1 ) {
+		return 0;
+	}
+	while ( isdigit ( *p ) || *p == '.' || *p == '-' ) {
+		p++;
+	}
+  if ( !*p ) return 0;
+  if ( *p == '+' || *p == ':' ) {
+    p++;
+  }
+  if ( !*p ) return 0;
+  if ( sscanf ( p, "%lf", &deviceInfo->longitude ) != 1 ) {
+    return 0;
+  }
+  while ( isdigit ( *p ) || *p == '.' || *p == '-' ) {
+    p++;
+  }
+  if ( !*p ) return 0;
+  if ( *p == '+' || *p == ':' ) {
+    p++;
+  }
+  if ( !*p ) return 0;
+  if ( sscanf ( p, "%lf", &deviceInfo->altitude ) != 1 ) {
+    return 0;
+  }
+  while ( isdigit ( *p ) || *p == '.' || *p == '-' || *p == '+' ) {
+    p++;
+  }
+  if ( *p == ':' ) {
+    p++;
+  }
+  deviceInfo->validGPS = 1;
+	return ( p - buffer );
 }

@@ -2,7 +2,7 @@
  *
  * Spinconnect.c -- Initialise Point Grey Spinnaker-based cameras
  *
- * Copyright 2018 James Fidell (james@openastroproject.org)
+ * Copyright 2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -73,36 +73,19 @@ oaSpinInitCamera ( oaCameraDevice* device )
   size_t		deviceIdLen = SPINNAKER_MAX_BUFF_LEN;
   unsigned int		i, j, found;
 
-
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( SPINNAKER_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
 
-  if (!( cameraInfo = ( SPINNAKER_STATE* ) malloc ( sizeof (
-      SPINNAKER_STATE )))) {
-    free (( void* ) camera );
-    perror ( "malloc FC2_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
-    perror ( "malloc COMMON_INFO failed" );
-    return 0;
-  }
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
-
-  _oaInitCameraFunctionPointers ( camera );
   _spinInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
   cameraInfo->initialised = 0;
   devInfo = device->_private;
+
+  camera->features.flags |= OA_CAM_FEATURE_READABLE_CONTROLS;
+  camera->features.flags |= OA_CAM_FEATURE_STREAMING;
 
   if (( *p_spinSystemGetInstance )( &systemHandle ) !=
       SPINNAKER_ERR_SUCCESS ) {

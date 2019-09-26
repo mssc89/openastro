@@ -1,7 +1,7 @@
 #
 # Makefile.am -- icons Makefile template
 #
-# Copyright 2017 James Fidell (james@openastroproject.org)
+# Copyright 2019 James Fidell (james@openastroproject.org)
 #
 # License:
 #
@@ -21,6 +21,14 @@
 # along with the Open Astro Project.  If not, see
 # <http://www.gnu.org/licenses/>.
 #
+
+ICONS = oacapture16.png oacapture24.png oacapture256.png oacapture32.png \
+				oacapture48.png oacapture.svg oacapture.xpm
+
+BUILT_SOURCES = $(ICONS)
+
+$(ICONS):
+	cp ../../icons/$@ .
 
 install-icons:
 	mkdir -p $(DESTDIR)${datarootdir}/pixmaps

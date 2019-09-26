@@ -27,12 +27,13 @@ AM_CPPFLAGS = \
   -I$(top_srcdir)/ext/libusb \
   -I$(top_srcdir)/liboacam \
   $(LIBUSB_CFLAGS) \
+  $(LIBDC1394_CFLAGS) \
   $(DYNLIB_EXTN_CFLAGS)
 
 noinst_LTLIBRARIES = libiidc.la
 
 libiidc_la_SOURCES = IIDCoacam.c IIDCconnect.c IIDCgetState.c IIDCcontrol.c \
-  IIDCcontroller.c IIDCcallback.c
+  IIDCcontroller.c IIDCcallback.c IIDCdynloader.c
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
 

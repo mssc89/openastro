@@ -2,7 +2,7 @@
  *
  * controlsWidget.h -- class declaration
  *
- * Copyright 2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +28,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtGui>
@@ -36,6 +36,7 @@
 #include "cameraControls.h"
 #include "stackingControls.h"
 #include "saveControls.h"
+#include "processingControls.h"
 #include "outputHandler.h"
 
 class ControlsWidget : public QWidget
@@ -52,6 +53,8 @@ class ControlsWidget : public QWidget
     void		disableAllButtons ( void );
     OutputHandler*	getProcessedOutputHandler ( void );
     void		closeOutputHandlers ( void );
+    void		connectSignals ( void );
+		int			getZoomFactor ( void );
 
   private:
     QVBoxLayout*	mainBox;
@@ -68,6 +71,7 @@ class ControlsWidget : public QWidget
     CameraControls*	camera;
     StackingControls*	stacking;
     SaveControls*	save;
+    ProcessingControls*	processing;
 
     OutputHandler*	frameOutputHandler;
     OutputHandler*	processedImageOutputHandler;
@@ -77,12 +81,13 @@ class ControlsWidget : public QWidget
     int			ignoreResolutionChanges;
 
     void		configureResolution ( void );
-    void		doResolutionChange ( int );
     void		openOutputFiles ( void );
 
   public slots:
     void		startCapture ( void );
     void		stopCapture ( void );
     void		restartCapture ( void );
+    void		startNextExposure ( void );
     void		resolutionChanged ( int );
+    void		doResolutionChange ( int );	// for DSLR callbacks
 };

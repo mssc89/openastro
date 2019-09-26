@@ -2,7 +2,7 @@
  *
  * imgproc.h -- image processing functions header
  *
- * Copyright 2015 James Fidell (james@openastroproject.org)
+ * Copyright 2015, 2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -29,8 +29,18 @@
 
 extern int	oaFocusScore ( void*, void*, int, int, int );
 
-extern int	oaStackSum8 ( void*, void*, void*, unsigned int );
-extern int	oaStackMean8 ( void*, unsigned int*, void*, unsigned int,
-		    unsigned int );
+extern int	oaStackSum8 ( void**, unsigned int, void*, unsigned int );
+extern int	oaStackMean8 ( void**, unsigned int, void*, unsigned int );
+extern int	oaStackMedian8 ( void**, unsigned int, void*, unsigned int );
+extern int	oaStackMaximum8 ( void**, unsigned int, void*, unsigned int );
+extern int	oaStackKappaSigma8 ( void**, unsigned int, void*, unsigned int,
+								double );
+extern int	oaStackMedianKappaSigma8 ( void**, unsigned int, void*,
+								unsigned int, double );
+
+extern int	oaContrastTransform ( void*, void*, int, int, int, int );
+
+extern int		oaclamp ( int, int, int );
+extern double	oadclamp ( double, double, double );
 
 #endif	/* OPENASTRO_IMGPROC_H */

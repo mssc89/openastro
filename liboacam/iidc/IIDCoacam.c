@@ -2,7 +2,8 @@
  *
  * IIDCoacam.c -- main entrypoint for IEE1394/IIDC Cameras
  *
- * Copyright 2013,2014,2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2018,2019
+ *     James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -34,6 +35,7 @@
 #include "oacamprivate.h"
 #include "unimplemented.h"
 #include "IIDCoacam.h"
+#include "IIDCprivate.h"
 
 
 /**
@@ -42,7 +44,8 @@
  */
 
 int
-oaIIDCGetCameras ( CAMERA_LIST* deviceList, int flags )
+oaIIDCGetCameras ( CAMERA_LIST* deviceList, unsigned long featureFlags,
+		int flags )
 {
   dc1394_t*	        iidcContext;
   dc1394error_t	        err;
@@ -55,20 +58,24 @@ oaIIDCGetCameras ( CAMERA_LIST* deviceList, int flags )
   oaCameraDevice*       dev;
   DEVICE_INFO*		_private;
 
-  iidcContext = dc1394_new();
+  if (( ret = _iidcInitLibraryFunctionPointers()) != OA_ERR_NONE ) {
+    return ret;
+  }
+
+  iidcContext = p_dc1394_new();
   if ( !iidcContext ) {
     fprintf ( stderr, "Can't get IIDC context\n" );
     return -OA_ERR_SYSTEM_ERROR;
   }
-  err = dc1394_camera_enumerate ( iidcContext, &devlist );
+  err = p_dc1394_camera_enumerate ( iidcContext, &devlist );
   if ( err < 0 ) {
-    dc1394_free ( iidcContext );
+    p_dc1394_free ( iidcContext );
     fprintf ( stderr, "Can't enumerate IIDC devices\n" );
     return -OA_ERR_SYSTEM_ERROR;
   }
   if ( !devlist->num ) {
-    dc1394_camera_free_list ( devlist );
-    dc1394_free ( iidcContext );
+    p_dc1394_camera_free_list ( devlist );
+    p_dc1394_free ( iidcContext );
     return 0;
   }
 
@@ -76,20 +83,18 @@ oaIIDCGetCameras ( CAMERA_LIST* deviceList, int flags )
   for ( i = 0; i < devlist->num; i++ ) {
     guid = devlist->ids[i].guid;
     unit = devlist->ids[i].unit;
-    device = dc1394_camera_new_unit ( iidcContext, guid, unit );
+    device = p_dc1394_camera_new_unit ( iidcContext, guid, unit );
 
     if (!( dev = malloc ( sizeof ( oaCameraDevice )))) {
-      _oaFreeCameraDeviceList ( deviceList );
-      dc1394_camera_free_list ( devlist );
-      dc1394_free ( iidcContext );
+      p_dc1394_camera_free_list ( devlist );
+      p_dc1394_free ( iidcContext );
       return -OA_ERR_MEM_ALLOC;
     }
 
     if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
-      free (( void* ) dev );
-      _oaFreeCameraDeviceList ( deviceList );
-      dc1394_camera_free_list ( devlist );
-      dc1394_free ( iidcContext );
+      ( void ) free (( void* ) dev );
+      p_dc1394_camera_free_list ( devlist );
+      p_dc1394_free ( iidcContext );
       return -OA_ERR_MEM_ALLOC;
     }
 
@@ -102,21 +107,20 @@ oaIIDCGetCameras ( CAMERA_LIST* deviceList, int flags )
     dev->_private = _private;
     dev->initCamera = oaIIDCInitCamera;
     dev->hasLoadableFirmware = 0;
-    dc1394_camera_free ( device );
+    p_dc1394_camera_free ( device );
     if (( ret = _oaCheckCameraArraySize ( deviceList )) < 0 ) {
       free (( void* ) dev );
       free (( void* ) _private );
-      _oaFreeCameraDeviceList ( deviceList );
-      dc1394_camera_free_list ( devlist );
-      dc1394_free ( iidcContext );
+      p_dc1394_camera_free_list ( devlist );
+      p_dc1394_free ( iidcContext );
       return ret;
     }
     deviceList->cameraList[ deviceList->numCameras++ ] = dev;
     numFound++;
   }
 
-  dc1394_camera_free_list ( devlist );
-  dc1394_free ( iidcContext );
+  p_dc1394_camera_free_list ( devlist );
+  p_dc1394_free ( iidcContext );
   return numFound;
 }
 

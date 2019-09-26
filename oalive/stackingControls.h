@@ -2,7 +2,7 @@
  *
  * stackingControls.h -- class declaration
  *
- * Copyright 2015, 2016 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +28,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtGui>
@@ -37,9 +37,12 @@ extern "C" {
 #include <openastro/camera.h>
 }
 
-#define	OA_STACK_NONE		0
-#define	OA_STACK_SUM		1
-#define	OA_STACK_MEAN		2
+#define	OA_STACK_NONE					0
+#define	OA_STACK_SUM					1
+#define	OA_STACK_MEAN					2
+#define	OA_STACK_MEDIAN				3
+#define	OA_STACK_MAXIMUM			4
+#define	OA_STACK_KAPPA_SIGMA	5
 
 
 class StackingControls : public QWidget
@@ -51,11 +54,14 @@ class StackingControls : public QWidget
     			~StackingControls();
 
   private:
-    QLabel*		methodLabel;
-    QComboBox*		stackingMethodMenu;
-    QVBoxLayout*	layout;
-    QHBoxLayout*	hbox1;
+    QLabel*							methodLabel;
+    QComboBox*					stackingMethodMenu;
+    QGridLayout*				grid;
+		QLabel*							kappaLabel;
+		QLineEdit*					kappaInput;
+		QDoubleValidator*		kappaValidator;
 
   public slots:
     void		stackingMethodChanged ( int );
+    void		updateKappaValue ( void );
 };

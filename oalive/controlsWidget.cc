@@ -2,7 +2,8 @@
  *
  * controlsWidget.cc -- the tab block for the controls
  *
- * Copyright 2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,16 +29,22 @@
 
 #include <QtGui>
 
+#include "fitsSettings.h"
+#include "trampoline.h"
+#include "outputHandler.h"
+#include "outputTIFF.h"
+#include "outputPNG.h"
+#include "outputFITS.h"
+#include "commonState.h"
+#include "commonConfig.h"
+
 #include "version.h"
 #include "configuration.h"
 #include "state.h"
 #include "controlsWidget.h"
 
-#include "outputTIFF.h"
-#include "outputFITS.h"
 
-
-ControlsWidget::ControlsWidget ( QWidget* parent )
+ControlsWidget::ControlsWidget ( QWidget* parent __attribute((unused)))
 {
   mainBox = new QVBoxLayout;
   topButtonBox = new QHBoxLayout;
@@ -47,6 +54,7 @@ ControlsWidget::ControlsWidget ( QWidget* parent )
   camera = new CameraControls ( this );
   stacking = new StackingControls ( this );
   save = new SaveControls ( this );
+  processing = new ProcessingControls ( this );
 
   startButton = new QPushButton ( "Start", this );
   stopButton = new QPushButton ( "Stop", this );
@@ -84,6 +92,7 @@ ControlsWidget::ControlsWidget ( QWidget* parent )
 */
 
   tabSet->addTab ( camera, tr ( "Camera" ));
+  tabSet->addTab ( processing, tr ( "Display" ));
   tabSet->addTab ( stacking, tr ( "Stacking" ));
   tabSet->addTab ( save, tr ( "Image Capture" ));
   tabSet->setTabPosition ( QTabWidget::East );
@@ -111,6 +120,8 @@ ControlsWidget::ControlsWidget ( QWidget* parent )
   frameOutputHandler = processedImageOutputHandler = 0;
 
   state.cameraControls = camera;
+  state.processingControls = processing;
+	state.cameraRunning = 0;
 }
 
 
@@ -118,6 +129,15 @@ ControlsWidget::~ControlsWidget()
 {
   state.mainWindow->destroyLayout (( QLayout* ) mainBox );
   state.cameraControls = 0;
+  state.processingControls = 0;
+}
+
+
+void
+ControlsWidget::connectSignals ( void )
+{
+  connect ( state.viewWidget, SIGNAL( startNextExposure ( void )),
+      this, SLOT ( startNextExposure ( void )));
 }
 
 
@@ -139,7 +159,10 @@ void
 ControlsWidget::configure ( void )
 {
   camera->configure();
-  configureResolution();
+  processing->configure();
+	if ( !commonState.camera->frameSizeUnknown()) {
+		configureResolution();
+	}
 }
 
 
@@ -172,16 +195,23 @@ void
 ControlsWidget::startCapture ( void )
 {
   openOutputFiles();
-  state.camera->start();
+	if ( commonState.camera->isSingleShot()) {
+		commonState.camera->startExposure ( 0, &ViewWidget::addImage,
+				&commonState );
+	} else {
+		commonState.camera->startStreaming ( &ViewWidget::addImage, &commonState );
+	}
   startButton->setEnabled ( 0 );
   stopButton->setEnabled ( 1 );
+	state.cameraRunning = 1;
 }
 
 
 void
 ControlsWidget::stopCapture ( void )
 {
-  state.camera->stop();
+  commonState.camera->stop();
+	state.cameraRunning = 0;
   startButton->setEnabled ( 1 );
   stopButton->setEnabled ( 0 );
   if ( frameOutputHandler ) {
@@ -200,7 +230,8 @@ ControlsWidget::stopCapture ( void )
 void
 ControlsWidget::restartCapture ( void )
 {
-  state.camera->stop();
+  commonState.camera->stop();
+	state.cameraRunning = 0;
   if ( frameOutputHandler ) {
     frameOutputHandler->closeOutput();
     delete frameOutputHandler;
@@ -213,9 +244,27 @@ ControlsWidget::restartCapture ( void )
   }
   openOutputFiles();
   state.viewWidget->restart();
-  state.camera->start();
+	if ( commonState.camera->isSingleShot()) {
+		commonState.camera->startExposure ( 0, &ViewWidget::addImage,
+				&commonState );
+	} else {
+		commonState.camera->startStreaming ( &ViewWidget::addImage, &commonState );
+	}
+	state.cameraRunning = 1;
   startButton->setEnabled ( 0 );
   stopButton->setEnabled ( 1 );
+}
+
+
+void
+ControlsWidget::startNextExposure ( void )
+{
+	if ( state.cameraRunning ) {
+		if ( commonState.camera->isSingleShot()) {
+			commonState.camera->startExposure ( 0, &ViewWidget::addImage,
+					&commonState );
+		}
+	}
 }
 
 
@@ -223,16 +272,14 @@ void
 ControlsWidget::configureResolution ( void )
 {
   // FIX ME -- add controls for screen resolution
-/* commented to prevent unused error
   int maxX, maxY;
   maxX = maxY = 0;
-*/
 
   // This includes a particularly ugly way to sort the resolutions using
   // a QMap and some further QMap abuse to be able to find the X and Y
   // resolutions should we not have a setting that matches the config and
   // happen to choose the max size option
-  const FRAMESIZES* sizeList = state.camera->frameSizes();
+  const FRAMESIZES* sizeList = commonState.camera->frameSizes();
   QMap<int,QString> sortMap;
   QMap<int,int> xRes, yRes;
   QString showItemStr;
@@ -243,8 +290,8 @@ ControlsWidget::configureResolution ( void )
     int numPixels = sizeList->sizes[i].x * sizeList->sizes[i].y;
     QString resStr = QString::number ( sizeList->sizes[i].x ) + "x" +
         QString::number ( sizeList->sizes[i].y );
-    if ( sizeList->sizes[i].x == config.imageSizeX &&
-        sizeList->sizes[i].y == config.imageSizeY ) {
+    if ( sizeList->sizes[i].x == commonConfig.imageSizeX &&
+        sizeList->sizes[i].y == commonConfig.imageSizeY ) {
       showItemStr = resStr;
     }
     sortMap [ numPixels ] = resStr;
@@ -285,22 +332,23 @@ ControlsWidget::configureResolution ( void )
 */
 
   if ( showItem >= 0 ) {
-    config.imageSizeX = showXRes;
-    config.imageSizeY = showYRes;
+    commonConfig.imageSizeX = showXRes;
+    commonConfig.imageSizeY = showYRes;
   } else {
     // FIX ME -- put back when there is a resolutions menu
     showItem = numItems - 1; // max->isChecked() ? numItems - 1: 0;
     if ( showItem ) {
-      config.imageSizeX = xRes[ lastKey ];
-      config.imageSizeY = yRes[ lastKey ];
+      commonConfig.imageSizeX = xRes[ lastKey ];
+      commonConfig.imageSizeY = yRes[ lastKey ];
     } else {
-      config.imageSizeX = xRes[ firstKey ];
-      config.imageSizeY = yRes[ firstKey ];
+      commonConfig.imageSizeX = xRes[ firstKey ];
+      commonConfig.imageSizeY = yRes[ firstKey ];
     }
   }
-  // commented to prevent unused error
-  //maxX = xRes[ lastKey ];
-  //maxY = yRes[ lastKey ];
+  maxX = xRes[ lastKey ];
+  maxY = yRes[ lastKey ];
+	commonState.sensorSizeX = maxX;
+	commonState.sensorSizeY = maxY;
 
   // There's a gotcha here for cameras that only support a single
   // resolution, as the index won't actually change, and the slot
@@ -316,8 +364,8 @@ ControlsWidget::configureResolution ( void )
     resMenu->setCurrentIndex ( showItem );
   }
 */
-  // xSize->setText ( QString::number ( config.imageSizeX ));
-  // ySize->setText ( QString::number ( config.imageSizeY ));
+  // xSize->setText ( QString::number ( commonConfig.imageSizeX ));
+  // ySize->setText ( QString::number ( commonConfig.imageSizeY ));
 /*
   xSize->setEnabled ( 0 );
   ySize->setEnabled ( 0 );
@@ -328,7 +376,7 @@ ControlsWidget::configureResolution ( void )
   }
 */
 /*
-  if ( state.camera->hasROI()) {
+  if ( commonState.camera->hasROI()) {
     roi->setEnabled ( 1 );
     max->setEnabled ( 1 );
     roiButton->setEnabled(1);
@@ -358,8 +406,8 @@ ControlsWidget::resolutionChanged ( int index )
 {
   // changes to this function may need to be replicated in
   // updateFromConfig()
-  if ( !state.camera || ignoreResolutionChanges ||
-      !state.camera->isInitialised()) {
+  if ( !commonState.camera || ignoreResolutionChanges ||
+      !commonState.camera->isInitialised()) {
     return;
   }
 /*
@@ -374,10 +422,10 @@ ControlsWidget::resolutionChanged ( int index )
     buttonGroup->setExclusive ( true );
   }
 */
-  config.imageSizeX = XResolutions[ index ];
-  config.imageSizeY = YResolutions[ index ];
-  // xSize->setText ( QString::number ( config.imageSizeX ));
-  // ySize->setText ( QString::number ( config.imageSizeY ));
+  commonConfig.imageSizeX = XResolutions[ index ];
+  commonConfig.imageSizeY = YResolutions[ index ];
+  // xSize->setText ( QString::number ( commonConfig.imageSizeX ));
+  // ySize->setText ( QString::number ( commonConfig.imageSizeY ));
   doResolutionChange ( 0 );
 }
 
@@ -385,21 +433,27 @@ ControlsWidget::resolutionChanged ( int index )
 void
 ControlsWidget::doResolutionChange ( int roiChanged )
 {
-  // state.camera->delayFrameRateChanges();
+  // commonState.camera->delayFrameRateChanges();
 
   camera->updateFrameRateSlider();
 
   if ( roiChanged ) {
-    state.camera->setROI ( config.imageSizeX, config.imageSizeY );
+    commonState.camera->setROI ( commonConfig.imageSizeX,
+				commonConfig.imageSizeY );
   } else {
-    state.camera->setResolution ( config.imageSizeX, config.imageSizeY );
+		if ( !commonState.camera->hasUnknownFrameSize()) {
+			commonState.camera->setResolution ( commonConfig.imageSizeX,
+					commonConfig.imageSizeY );
+		}
   }
   if ( state.viewWidget ) {
     state.viewWidget->updateFrameSize();
   }
-  if ( config.profileOption >= 0 ) {
-    config.profiles[ config.profileOption ].imageSizeX = config.imageSizeX;
-    config.profiles[ config.profileOption ].imageSizeY = config.imageSizeY;
+  if ( commonConfig.profileOption >= 0 ) {
+    profileConf.profiles[ commonConfig.profileOption ].imageSizeX =
+				commonConfig.imageSizeX;
+    profileConf.profiles[ commonConfig.profileOption ].imageSizeY =
+				commonConfig.imageSizeY;
   }
 }
 
@@ -410,35 +464,46 @@ ControlsWidget::openOutputFiles ( void )
   OutputHandler*	out = 0;
   int			format;
 
-  format = state.camera->videoFramePixelFormat();
+  format = commonState.camera->videoFramePixelFormat();
   if ( oaFrameFormats[ format ].rawColour ) {
     format = OA_DEMOSAIC_FMT ( format );
   }
 
   if ( config.saveEachFrame ) {
-    switch ( config.fileTypeOption ) {
+    switch ( commonConfig.fileTypeOption ) {
       case CAPTURE_TIFF:
-        out = new OutputTIFF ( config.imageSizeX, config.imageSizeY,
+        out = new OutputTIFF ( commonConfig.imageSizeX, commonConfig.imageSizeY,
             state.cameraControls->getFPSNumerator(),
             state.cameraControls->getFPSDenominator(), format,
-            config.frameFileNameTemplate );
+						APPLICATION_NAME, VERSION_STR, config.frameFileNameTemplate,
+						&trampolines );
         break;
-#ifdef HAVE_LIBCFITSIO
-      case CAPTURE_FITS:
-        out = new OutputFITS ( config.imageSizeX, config.imageSizeY,
+      case CAPTURE_PNG:
+        out = new OutputPNG ( commonConfig.imageSizeX, commonConfig.imageSizeY,
             state.cameraControls->getFPSNumerator(),
             state.cameraControls->getFPSDenominator(), format,
-            config.frameFileNameTemplate );
+						APPLICATION_NAME, VERSION_STR, config.frameFileNameTemplate,
+						&trampolines );
+        break;
+#if HAVE_LIBCFITSIO
+      case CAPTURE_FITS:
+        out = new OutputFITS ( commonConfig.imageSizeX, commonConfig.imageSizeY,
+            state.cameraControls->getFPSNumerator(),
+            state.cameraControls->getFPSDenominator(), format,
+						APPLICATION_NAME, VERSION_STR, config.frameFileNameTemplate,
+						&trampolines );
         break;
 #endif
     }
 
-    if ( out && ( CAPTURE_TIFF == config.fileTypeOption ||
-        CAPTURE_FITS == config.fileTypeOption )) {
+    if ( out && ( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+        CAPTURE_FITS == commonConfig.fileTypeOption ||
+				CAPTURE_PNG == commonConfig.fileTypeOption )) {
       if ( !out->outputWritable()) {
-        // FIX ME -- this may cross threads: don't cross the threads!
-        QMessageBox::warning ( this, tr ( "Start Recording" ),
-          tr ( "Output is not writable" ));
+				// Have to do it this way rather than calling direct to ensure
+				// thread-safety
+				QMetaObject::invokeMethod ( state.mainWindow, "outputUnwritable",
+						Qt::DirectConnection );
         delete out;
         out = 0;
         return;
@@ -446,58 +511,68 @@ ControlsWidget::openOutputFiles ( void )
     } else {
       if ( out && out->outputExists()) {
         if ( out->outputWritable()) {
-          // FIX ME -- this may cross threads: don't cross the threads!
-          if ( QMessageBox::question ( this, tr ( "Start Recording" ),
-              tr ( "Output file exists.  OK to overwrite?" ), QMessageBox::No |
-              QMessageBox::Yes, QMessageBox::No ) == QMessageBox::No ) {
+					int result;
+					// Have to do it this way rather than calling direct to ensure
+					// thread-safety
+					QMetaObject::invokeMethod ( state.mainWindow, "outputExists",
+							Qt::DirectConnection, Q_RETURN_ARG( int, result ));
+					if ( result == QMessageBox::No ) {
             delete out;
             out = 0;
             return;
           }
         } else {
-          // FIX ME -- this may cross threads: don't cross the threads!
-          QMessageBox::warning ( this, tr ( "Start Recording" ),
-            tr ( "Output file exists and is not writable" ));
+					// Have to do it this way rather than calling direct to ensure
+					// thread-safety
+					QMetaObject::invokeMethod ( state.mainWindow,
+							"outputExistsUnwritable", Qt::DirectConnection );
           delete out;
           return;
         }
       }
     }
     if ( !out || out->openOutput()) {
-      // FIX ME -- this may cross threads: don't cross the threads!
-      QMessageBox::warning ( this, APPLICATION_NAME,
-          tr ( "Unable to create file for output" ));
+			QMetaObject::invokeMethod ( state.mainWindow, "createFileFailed",
+					Qt::DirectConnection );
       return;
     }
 
-qWarning() << "have frame save handler";
     frameOutputHandler = out;
   }
 
   if ( config.saveProcessedImage ) {
-    switch ( config.fileTypeOption ) {
+    switch ( commonConfig.fileTypeOption ) {
       case CAPTURE_TIFF:
-        out = new OutputTIFF ( config.imageSizeX, config.imageSizeY,
+        out = new OutputTIFF ( commonConfig.imageSizeX, commonConfig.imageSizeY,
             state.cameraControls->getFPSNumerator(),
             state.cameraControls->getFPSDenominator(), format,
-            config.processedFileNameTemplate );
+						APPLICATION_NAME, VERSION_STR, config.processedFileNameTemplate,
+            &trampolines );
         break;
-#ifdef HAVE_LIBCFITSIO
-      case CAPTURE_FITS:
-        out = new OutputFITS ( config.imageSizeX, config.imageSizeY,
+      case CAPTURE_PNG:
+        out = new OutputPNG ( commonConfig.imageSizeX, commonConfig.imageSizeY,
             state.cameraControls->getFPSNumerator(),
             state.cameraControls->getFPSDenominator(), format,
-            config.processedFileNameTemplate );
+						APPLICATION_NAME, VERSION_STR, config.processedFileNameTemplate,
+            &trampolines );
+        break;
+#if HAVE_LIBCFITSIO
+      case CAPTURE_FITS:
+        out = new OutputFITS ( commonConfig.imageSizeX, commonConfig.imageSizeY,
+            state.cameraControls->getFPSNumerator(),
+            state.cameraControls->getFPSDenominator(), format,
+						APPLICATION_NAME, VERSION_STR, config.processedFileNameTemplate,
+            &trampolines );
         break;
 #endif
     }
 
-    if ( out && ( CAPTURE_TIFF == config.fileTypeOption ||
-        CAPTURE_FITS == config.fileTypeOption )) {
+    if ( out && ( CAPTURE_TIFF == commonConfig.fileTypeOption ||
+        CAPTURE_FITS == commonConfig.fileTypeOption ||
+				CAPTURE_PNG == commonConfig.fileTypeOption )) {
       if ( !out->outputWritable()) {
-        // FIX ME -- this may cross threads: don't cross the threads!
-        QMessageBox::warning ( this, tr ( "Start Recording" ),
-          tr ( "Output is not writable" ));
+				QMetaObject::invokeMethod ( state.mainWindow, "outputUnwritable",
+						Qt::DirectConnection );
         delete out;
         out = 0;
         return;
@@ -505,27 +580,29 @@ qWarning() << "have frame save handler";
     } else {
       if ( out && out->outputExists()) {
         if ( out->outputWritable()) {
-          // FIX ME -- this may cross threads: don't cross the threads!
-          if ( QMessageBox::question ( this, tr ( "Start Recording" ),
-              tr ( "Output file exists.  OK to overwrite?" ), QMessageBox::No |
-              QMessageBox::Yes, QMessageBox::No ) == QMessageBox::No ) {
+					int result;
+					// Have to do it this way rather than calling direct to ensure
+					// thread-safety
+					QMetaObject::invokeMethod ( state.mainWindow, "outputExists",
+							Qt::DirectConnection, Q_RETURN_ARG( int, result ));
+					if ( result == QMessageBox::No ) {
             delete out;
             out = 0;
             return;
           }
         } else {
-          // FIX ME -- this may cross threads: don't cross the threads!
-          QMessageBox::warning ( this, tr ( "Start Recording" ),
-            tr ( "Output file exists and is not writable" ));
+					// Have to do it this way rather than calling direct to ensure
+					// thread-safety
+					QMetaObject::invokeMethod ( state.mainWindow,
+							"outputExistsUnwritable", Qt::DirectConnection );
           delete out;
           return;
         }
       }
     }
     if ( !out || out->openOutput()) {
-      // FIX ME -- this may cross threads: don't cross the threads!
-      QMessageBox::warning ( this, APPLICATION_NAME,
-          tr ( "Unable to create file for output" ));
+			QMetaObject::invokeMethod ( state.mainWindow, "createFileFailed",
+					Qt::DirectConnection );
       return;
     }
 
@@ -554,4 +631,11 @@ ControlsWidget::closeOutputHandlers ( void )
     delete processedImageOutputHandler;
     processedImageOutputHandler = 0;
   }
+}
+
+
+int
+ControlsWidget::getZoomFactor ( void )
+{
+	return processing->zoom->getZoomFactor();
 }

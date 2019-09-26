@@ -3,7 +3,7 @@
  * ZWASIcommonControl.c -- control functions for ZW ASI cameras common to
  *                         v1 and v2 interfaces
  *
- * Copyright 2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2017,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -358,7 +358,7 @@ oaZWASICameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaZWASICameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND	command;
   CALLBACK	callbackData;
@@ -371,7 +371,7 @@ oaZWASICameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -407,7 +407,7 @@ oaZWASICameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "ZWASI: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

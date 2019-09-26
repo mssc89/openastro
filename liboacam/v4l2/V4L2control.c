@@ -2,7 +2,8 @@
  *
  * V4L2control.c -- control functions for V4L2 cameras
  *
- * Copyright 2013,2014,2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2017,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -258,7 +259,7 @@ oaV4L2CameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaV4L2CameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND    command;
   CALLBACK      callbackData;
@@ -271,7 +272,7 @@ oaV4L2CameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -307,7 +308,7 @@ oaV4L2CameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "V4L2: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

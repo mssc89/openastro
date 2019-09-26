@@ -29,12 +29,12 @@
 
 extern int		_QHY5LIIInitCamera ( oaCamera* );
 extern void*		oacamQHY5LIIcontroller ( void* );
-extern void		oaQHY5LIISetAllControls ( QHY_STATE* );
+extern void		oaQHY5LIISetAllControls ( oaCamera* );
 
 #define QHY5LII_IMAGE_WIDTH		1280
 #define QHY5LII_IMAGE_HEIGHT		960
-#define QHY5LII_DEFAULT_EXPOSURE	100
-#define QHY5LII_DEFAULT_SPEED		1
+#define QHY5LII_DEFAULT_EXPOSURE	20
+#define QHY5LII_DEFAULT_SPEED		0
 #define QHY5LII_DEFAULT_USBTRAFFIC	30
 #define QHY5LII_EOF_LEN			5
 

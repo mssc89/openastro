@@ -2,7 +2,7 @@
  *
  * mainWindow.cc -- the main controlling window class
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -38,6 +38,10 @@ extern "C" {
 }
 
 #include "focusOverlay.h"
+#include "commonState.h"
+#include "commonConfig.h"
+#include "targets.h"
+
 #include "mainWindow.h"
 #include "version.h"
 #include "configuration.h"
@@ -48,8 +52,8 @@ extern "C" {
 #include "zoomWidget.h"
 #include "previewWidget.h"
 #include "settingsWidget.h"
+
 #include "state.h"
-#include "targets.h"
 
 CONFIG		config;
 STATE		state;
@@ -67,30 +71,36 @@ static const char* styleGroupBoxBorders =
   "}";
 
 
-MainWindow::MainWindow()
+MainWindow::MainWindow ( QString configFile )
 {
   QString qtVer;
   unsigned int qtMajorVersion;
   int i;
   bool ok;
 
-  cameraSignalMapper = filterWheelSignalMapper = 0;
-  timerSignalMapper = 0;
-  timerStatus = wheelStatus = locationLabel = 0;
-  advancedFilterWheelSignalMapper = 0;
-  rescanCam = disconnectCam = 0;
-  rescanWheel = disconnectWheel = warmResetWheel = coldResetWheel = 0;
-  rescanTimer = disconnectTimerDevice = resetTimerDevice = 0;
+	commonState.localState = &state;
+  userConfigFile = configFile;
+  cameraSignalMapper = filterWheelSignalMapper = nullptr;
+  timerSignalMapper = nullptr;
+  timerStatus = wheelStatus = locationLabel = nullptr;
+  advancedFilterWheelSignalMapper = nullptr;
+  resetCam = rescanCam = disconnectCam = nullptr;
+  rescanWheel = disconnectWheel = warmResetWheel = coldResetWheel = nullptr;
+  rescanTimer = disconnectTimerDevice = resetTimerDevice = nullptr;
   connectedCameras = cameraMenuCreated = 0;
   connectedFilterWheels = filterWheelMenuCreated = 0;
   connectedTimers = timerMenuCreated = 0;
   doingQuit = 0;
+  cameraDevs = nullptr;
+  filterWheelDevs = nullptr;
+  timerDevs = nullptr;
   state.histogramOn = 0;
-  state.histogramWidget = 0;
+  state.histogramSignalConnected = 0;
+  state.histogramWidget = nullptr;
   state.needGroupBoxBorders = 0;
-  state.cameraTempValid = 0;
-  state.gpsValid = 0;
-  state.binningValid = 0;
+  commonState.cameraTempValid = 0;
+  commonState.gpsValid = 0;
+  commonState.binningValid = 0;
 
   // The gtk+ style doesn't enable group box borders by default, which makes
   // the display look confusing.
@@ -109,26 +119,25 @@ MainWindow::MainWindow()
     this->setStyleSheet ( styleGroupBoxBorders );
   }
 
-  readConfig();
+  readConfig ( configFile );
   createStatusBar();
   createMenus();
   setWindowTitle( APPLICATION_NAME " " VERSION_STR );
 
   state.mainWindow = this;
-  state.controlWidget = 0;
-  state.libavStarted = 0;
-  state.camera = new Camera;
-  state.filterWheel = new FilterWheel;
-  state.timer = new Timer;
+  state.controlWidget = nullptr;
+  commonState.camera = new Camera;
+  commonState.filterWheel = new FilterWheel ( &trampolines );
+  commonState.timer = new Timer ( &trampolines );
   oldHistogramState = -1;
   state.lastRecordedFile = "";
-  state.captureIndex = 0;
-  state.settingsWidget = 0;
-  state.advancedSettings = 0;
-  colourDialog = 0;
+  commonState.captureIndex = 0;
+  state.settingsWidget = nullptr;
+  state.advancedSettings = nullptr;
+  colourDialog = nullptr;
 
   // need to do this to prevent access attempts before creation
-  previewWidget = 0;
+  previewWidget = nullptr;
 
   createControlWidgets();
   createPreviewWindow();
@@ -151,10 +160,12 @@ MainWindow::MainWindow()
       double )), state.cameraWidget, SLOT ( setActualFrameRate ( double )));
   connect ( state.previewWidget, SIGNAL( updateTemperature ( void )),
       state.cameraWidget, SLOT ( setTemperature ( void )));
+	connect ( state.previewWidget, SIGNAL( updateAutoControls()),
+			state.controlWidget, SLOT( doAutoControlUpdate()));
 
 
   // update filters for matching filter wheels from config
-  state.filterWheel->updateAllSearchFilters();
+  commonState.filterWheel->updateAllSearchFilters();
 
   char d[ PATH_MAX ];
 #ifdef HAVE_QT4
@@ -163,7 +174,7 @@ MainWindow::MainWindow()
   state.currentDirectory = QString::fromLatin1 ( getcwd ( d, PATH_MAX ));
 #endif
 
-  if ( connectedCameras == 1 && config.connectSoleCamera ) {
+  if ( connectedCameras == 1 && generalConf.connectSoleCamera ) {
     connectCamera ( 0 );
   }
   focusaid->setChecked ( config.showFocusAid );
@@ -210,6 +221,9 @@ MainWindow::~MainWindow()
     delete timerSignalMapper;
   }
   delete exit;
+  if ( resetCam ) {
+    delete resetCam;
+  }
   if ( rescanCam ) {
     delete rescanCam;
   }
@@ -243,14 +257,14 @@ MainWindow::~MainWindow()
   delete capturedValue;
   delete progressBar;
   delete capturedLabel;
-  if ( state.camera ) {
-    delete state.camera;
+  if ( commonState.camera ) {
+    delete commonState.camera;
   }
-  if ( state.filterWheel ) {
-    delete state.filterWheel;
+  if ( commonState.filterWheel ) {
+    delete commonState.filterWheel;
   }
-  if ( state.timer ) {
-    delete state.timer;
+  if ( commonState.timer ) {
+    delete commonState.timer;
   }
   if ( state.histogramWidget ) {
     delete state.histogramWidget;
@@ -259,18 +273,11 @@ MainWindow::~MainWindow()
 
 
 void
-MainWindow::readConfig ( void )
+MainWindow::readConfig ( QString configFile )
 {
-#if defined(__APPLE__) && defined(__MACH__) && TARGET_OS_MAC == 1
-  QSettings	iniSettings ( QSettings::IniFormat, QSettings::UserScope,
-                ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
-  QSettings	plistSettings ( ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
-  QSettings*	settings = &iniSettings;
-#else
-  QSettings*	settings = new QSettings ( ORGANISATION_NAME_SETTINGS,
-                    APPLICATION_NAME );
-#endif
-  const char*		defaultDir = "";
+  QSettings*  settings;
+  const char* defaultDir = "";
+
 #if USE_HOME_DEFAULT
   struct passwd*	pwd;
 
@@ -280,25 +287,40 @@ MainWindow::readConfig ( void )
   }
 #endif
   
+  if ( configFile != "" ) {
+    settings = new QSettings ( configFile, QSettings::IniFormat );
+  } else {
 #if defined(__APPLE__) && defined(__MACH__) && TARGET_OS_MAC == 1
-  // The intention here is to allow a new ini-format file to override an
-  // old plist file, but to use the plist file if no other exists
-  if ( iniSettings.value ( "saveSettings", -1 ).toInt() == -1 ) {
-    if ( plistSettings.value ( "saveSettings", -1 ).toInt() != -1 ) {
-      settings = &plistSettings;
+    QSettings* iniSettings = new QSettings ( QSettings::IniFormat,
+        QSettings::UserScope, ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
+    settings = iniSettings;
+
+    // The intention here is to allow a new ini-format file to override an
+    // old plist file, but to use the plist file if no other exists
+    if ( iniSettings->value ( "saveSettings", -1 ).toInt() == -1 ) {
+      QSettings* plistSettings = new QSettings ( ORGANISATION_NAME_SETTINGS,
+          APPLICATION_NAME );
+      if ( plistSettings->value ( "saveSettings", -1 ).toInt() != -1 ) {
+        delete iniSettings;
+        settings = plistSettings;
+      } else {
+        delete plistSettings;
+      }
     }
-  }
+#else
+    settings = new QSettings ( ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
 #endif
+  }
 
   // -1 means we don't have a config file.  We change it to 1 later in the
   // function
-  config.saveSettings = settings->value ( "saveSettings", -1 ).toInt();
+  generalConf.saveSettings = settings->value ( "saveSettings", -1 ).toInt();
 
-  if ( !config.saveSettings ) {
+  if ( !generalConf.saveSettings ) {
 
-    config.tempsInC = 1;
-    config.reticleStyle = 1;
-    config.displayFPS = 15;
+    generalConf.tempsInC = 1;
+    generalConf.reticleStyle = 1;
+    generalConf.displayFPS = 15;
 
     config.showHistogram = 0;
     config.autoAlign = 0;
@@ -308,90 +330,92 @@ MainWindow::readConfig ( void )
     config.darkFrame = 0;
     config.flipX = 0;
     config.flipY = 0;
-    config.demosaic = 0;
+    commonConfig.demosaic = 0;
 
-    config.binning2x2 = 0;
-    config.colourise = 0;
+    commonConfig.binning2x2 = 0;
+    commonConfig.colourise = 0;
     config.inputFrameFormat = OA_PIX_FMT_RGB24;
-    config.forceInputFrameFormat = 0;
+    cameraConf.forceInputFrameFormat = 0;
 
-    config.useROI = 0;
-    config.imageSizeX = 0;
-    config.imageSizeY = 0;
+    commonConfig.useROI = 0;
+    commonConfig.imageSizeX = 0;
+    commonConfig.imageSizeY = 0;
 
     config.zoomButton1Option = 1;
     config.zoomButton2Option = 3;
     config.zoomButton3Option = 5;
     config.zoomValue = 100;
 
-    config.CONTROL_VALUE( OA_CAM_CTRL_GAIN ) = 50;
-    config.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_UNSCALED ) = 10;
-    config.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 100;
-    config.CONTROL_VALUE( OA_CAM_CTRL_GAMMA ) = -1;
-    config.CONTROL_VALUE( OA_CAM_CTRL_BRIGHTNESS ) = -1;
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_GAIN ) = 50;
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_UNSCALED ) = 10;
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 100;
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_GAMMA ) = -1;
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_BRIGHTNESS ) = -1;
     config.exposureMenuOption = 3;
-    config.frameRateNumerator = 0;
-    config.frameRateDenominator = 1;
+    commonConfig.frameRateNumerator = 0;
+    commonConfig.frameRateDenominator = 1;
     config.selectableControl[0] = OA_CAM_CTRL_GAMMA;
     config.selectableControl[1] = OA_CAM_CTRL_BRIGHTNESS;
     config.intervalMenuOption = 1;  // msec
 
-    config.profileOption = 0;
-    config.filterOption = 0;
-    config.fileTypeOption = 1;
-    config.limitEnabled = 0;
-    config.framesLimitValue = 0;
-    config.secondsLimitValue = 0;
-    config.limitType = 0;
-    config.fileNameTemplate = QString ( "oaCapture-%DATE-%TIME" );
-    config.captureDirectory = QString ( defaultDir );
+    commonConfig.profileOption = 0;
+    commonConfig.filterOption = 0;
+    commonConfig.fileTypeOption = 1;
+    commonConfig.limitEnabled = 0;
+    commonConfig.framesLimitValue = 0;
+    commonConfig.secondsLimitValue = 0;
+    commonConfig.limitType = 0;
+    commonConfig.fileNameTemplate = QString ( "oaCapture-%DATE-%TIME" );
+    commonConfig.captureDirectory = QString ( defaultDir );
 
-    config.autorunCount = 0;
-    config.autorunDelay = 0;
-    config.saveCaptureSettings = 1;
-    config.windowsCompatibleAVI = 0;
-    config.useUtVideo = 0;
-    config.indexDigits = 6;
+    autorunConf.autorunCount = 0;
+    autorunConf.autorunDelay = 0;
+    generalConf.saveCaptureSettings = 1;
+
+    captureConf.windowsCompatibleAVI = 0;
+    captureConf.useUtVideo = 0;
+    captureConf.indexDigits = 6;
 
     config.preview = 1;
     config.nightMode = 0;
 
-    config.splitHistogram = 0;
-    config.histogramOnTop = 1;
-    config.rawRGBHistogram = 1;
+    histogramConf.splitHistogram = 0;
+    histogramConf.histogramOnTop = 1;
+    histogramConf.rawRGBHistogram = 1;
 
-    config.demosaicPreview = 0;
-    config.demosaicOutput = 0;
-    config.cfaPattern = OA_DEMOSAIC_AUTO;
-    config.demosaicMethod = 1;
+    demosaicConf.demosaicPreview = 0;
+    demosaicConf.demosaicOutput = 0;
+    demosaicConf.cfaPattern = OA_DEMOSAIC_AUTO;
+    demosaicConf.demosaicMethod = 1;
+    demosaicConf.monoIsRawColour = 0;
 
-    config.numProfiles = 0;
-    config.numFilters = 0;
+    profileConf.numProfiles = 0;
+    filterConf.numFilters = 0;
 
-    config.promptForFilterChange = 0;
-    config.interFilterDelay = 0;
+    filterConf.promptForFilterChange = 0;
+    filterConf.interFilterDelay = 0;
 
     config.currentColouriseColour.setRgb ( 255, 255, 255 );
     config.numCustomColours = 0;
 
-    config.fitsObserver = "";
-    config.fitsInstrument = "";
-    config.fitsObject = "";
-    config.fitsComment = "";
-    config.fitsTelescope = "";
-    config.fitsFocalLength = "";
-    config.fitsApertureDia = "";
-    config.fitsApertureArea = "";
-    config.fitsPixelSizeX = "";
-    config.fitsPixelSizeY = "";
-    config.fitsSubframeOriginX = "";
-    config.fitsSubframeOriginY = "";
-    config.fitsSiteLatitude = "";
-    config.fitsSiteLongitude = "";
-    config.fitsFilter = "";
+    fitsConf.observer = "";
+    fitsConf.instrument = "";
+    fitsConf.object = "";
+    fitsConf.comment = "";
+    fitsConf.telescope = "";
+    fitsConf.focalLength = "";
+    fitsConf.apertureDia = "";
+    fitsConf.apertureArea = "";
+    fitsConf.pixelSizeX = "";
+    fitsConf.pixelSizeY = "";
+    fitsConf.subframeOriginX = "";
+    fitsConf.subframeOriginY = "";
+    fitsConf.siteLatitude = "";
+    fitsConf.siteLongitude = "";
+    fitsConf.filter = "";
 
-    config.timerMode = OA_TIMER_MODE_UNSET;
-    config.timerEnabled = 0;
+    timerConf.timerMode = OA_TIMER_MODE_UNSET;
+    timerConf.timerEnabled = 0;
   } else {
 
     int version = settings->value ( "configVersion", CONFIG_VERSION ).toInt();
@@ -401,18 +425,22 @@ MainWindow::readConfig ( void )
     // FIX ME -- how to handle this?
     // config.cameraDevice = settings->value ( "device/camera", -1 ).toInt();
 
-    config.tempsInC = settings->value ( "tempsInCentigrade", 1 ).toInt();
-    config.connectSoleCamera = settings->value ( "connectSoleCamera",
+    generalConf.tempsInC = settings->value ( "tempsInCentigrade", 1 ).toInt();
+    generalConf.connectSoleCamera = settings->value ( "connectSoleCamera",
         0 ).toInt();
-    config.dockableControls = settings->value ( "dockableControls", 0 ).toInt();
-    config.controlsOnRight = settings->value ( "controlsOnRight", 1 ).toInt();
-    config.separateControls = settings->value ( "separateControls", 0 ).toInt();
-    config.saveCaptureSettings = settings->value ( "saveCaptureSettings",
+    generalConf.dockableControls = settings->value (
+				"dockableControls", 0 ).toInt();
+    generalConf.controlsOnRight = settings->value (
+				"controlsOnRight", 1 ).toInt();
+    generalConf.separateControls = settings->value (
+				"separateControls", 0 ).toInt();
+    generalConf.saveCaptureSettings = settings->value ( "saveCaptureSettings",
         1 ).toInt();
-    config.windowsCompatibleAVI = settings->value ( "windowsCompatibleAVI",
-        0 ).toInt();
-    config.useUtVideo = settings->value ( "useUtVideo", 0 ).toInt();
-    config.indexDigits = settings->value ( "indexDigits", 6 ).toInt();
+
+    captureConf.windowsCompatibleAVI = settings->value (
+				"windowsCompatibleAVI", 0 ).toInt();
+    captureConf.useUtVideo = settings->value ( "useUtVideo", 0 ).toInt();
+    captureConf.indexDigits = settings->value ( "indexDigits", 6 ).toInt();
 
     config.showHistogram = settings->value ( "options/showHistogram",
         0 ).toInt();
@@ -423,21 +451,23 @@ MainWindow::readConfig ( void )
     config.darkFrame = settings->value ( "options/darkFrame", 0 ).toInt();
     config.flipX = settings->value ( "options/flipX", 0 ).toInt();
     config.flipY = settings->value ( "options/flipY", 0 ).toInt();
-    config.demosaic = settings->value ( "options/demosaic", 0 ).toInt();
+    commonConfig.demosaic = settings->value ( "options/demosaic", 0 ).toInt();
 
-    config.binning2x2 = settings->value ( "camera/binning2x2", 0 ).toInt();
-    config.colourise = settings->value ( "camera/colourise", 0 ).toInt();
+    commonConfig.binning2x2 = settings->value (
+				"camera/binning2x2", 0 ).toInt();
+    commonConfig.colourise = settings->value (
+				"camera/colourise", 0 ).toInt();
     // FIX ME -- reset these temporarily.  needs fixing properly
-    config.binning2x2 = 0;
-    config.colourise = 0;
+    commonConfig.binning2x2 = 0;
+    commonConfig.colourise = 0;
     config.inputFrameFormat = settings->value ( "camera/inputFrameFormat",
         OA_PIX_FMT_RGB24 ).toInt();
-    config.forceInputFrameFormat = settings->value (
+    cameraConf.forceInputFrameFormat = settings->value (
         "camera/forceInputFrameFormat", 0 ).toInt();
 
-    config.useROI = settings->value ( "image/useROI", 0 ).toInt();
-    config.imageSizeX = settings->value ( "image/imageSizeX", 0 ).toInt();
-    config.imageSizeY = settings->value ( "image/imageSizeY", 0 ).toInt();
+    commonConfig.useROI = settings->value ( "image/useROI", 0 ).toInt();
+    commonConfig.imageSizeX = settings->value ( "image/imageSizeX", 0 ).toInt();
+    commonConfig.imageSizeY = settings->value ( "image/imageSizeY", 0 ).toInt();
 
     config.zoomButton1Option = settings->value ( "image/zoomButton1Option",
         1 ).toInt();
@@ -448,23 +478,23 @@ MainWindow::readConfig ( void )
     config.zoomValue = settings->value ( "image/zoomValue", 100 ).toInt();
 
     if ( version < 3 ) {
-      config.CONTROL_VALUE( OA_CAM_CTRL_GAIN ) = settings->value (
+      cameraConf.CONTROL_VALUE( OA_CAM_CTRL_GAIN ) = settings->value (
           "control/gainValue", 50 ).toInt();
-      config.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_UNSCALED ) = settings->value (
-          "control/exposureValue", 10 ).toInt();
-      config.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = settings->value (
-          "control/exposureAbsoluteValue", 10 ).toInt();
-      config.CONTROL_VALUE( OA_CAM_CTRL_GAMMA ) = settings->value (
+      cameraConf.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_UNSCALED ) =
+				settings->value ( "control/exposureValue", 10 ).toInt();
+      cameraConf.CONTROL_VALUE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+				settings->value ( "control/exposureAbsoluteValue", 10 ).toInt();
+      cameraConf.CONTROL_VALUE( OA_CAM_CTRL_GAMMA ) = settings->value (
           "control/gammaValue", -1 ).toInt();
-      config.CONTROL_VALUE( OA_CAM_CTRL_BRIGHTNESS ) = settings->value (
+      cameraConf.CONTROL_VALUE( OA_CAM_CTRL_BRIGHTNESS ) = settings->value (
           "control/brightnessValue", -1 ).toInt();
     }
 
     config.exposureMenuOption = settings->value ( "control/exposureMenuOption",
         3 ).toInt();
-    config.frameRateNumerator = settings->value ( "control/frameRateNumerator",
-        0 ).toInt();
-    config.frameRateDenominator = settings->value (
+    commonConfig.frameRateNumerator = settings->value (
+				"control/frameRateNumerator", 0 ).toInt();
+    commonConfig.frameRateDenominator = settings->value (
         "control/frameRateDenominator", 1 ).toInt();
     config.selectableControl[0] = settings->value (
         "control/selectableControl1", OA_CAM_CTRL_GAMMA ).toInt();
@@ -476,46 +506,57 @@ MainWindow::readConfig ( void )
     config.intervalMenuOption = settings->value (
         "control/intervalMenuOption", 1 ).toInt(); // default = msec
 
-    config.profileOption = settings->value ( "control/profileOption",
-        0 ).toInt();
-    config.filterOption = settings->value ( "control/filterOption", 0 ).toInt();
-    config.fileTypeOption = settings->value ( "control/fileTypeOption",
+    // commonConfig.profileOption = settings->value ( "control/profileOption",
+    //     0 ).toInt();
+    commonConfig.filterOption = settings->value (
+				"control/filterOption", 0 ).toInt();
+    commonConfig.fileTypeOption = settings->value ( "control/fileTypeOption",
         1 ).toInt();
-    config.limitEnabled = settings->value ( "control/limitEnabled", 0 ).toInt();
-    config.framesLimitValue = settings->value ( "control/framesLimitValue",
-        0 ).toInt();
-    config.secondsLimitValue = settings->value ( "control/secondsLimitValue",
-        0 ).toInt();
-    config.limitType = settings->value ( "control/limitType", 0 ).toInt();
-    config.fileNameTemplate = settings->value ( "control/fileNameTemplate",
-        "oaCapture-%DATE-%TIME" ).toString();
-    config.captureDirectory = settings->value ( "control/captureDirectory",
-        defaultDir ).toString();
+    commonConfig.limitEnabled = settings->value (
+				"control/limitEnabled", 0 ).toInt();
+    commonConfig.framesLimitValue = settings->value (
+				"control/framesLimitValue", 0 ).toInt();
+    commonConfig.secondsLimitValue = settings->value (
+				"control/secondsLimitValue", 0 ).toInt();
+    commonConfig.limitType = settings->value ( "control/limitType", 0 ).toInt();
+    commonConfig.fileNameTemplate = settings->value (
+				"control/fileNameTemplate", "oaCapture-%DATE-%TIME" ).toString();
+    commonConfig.captureDirectory = settings->value (
+				"control/captureDirectory", defaultDir ).toString();
 
-    config.autorunCount = settings->value ( "autorun/count", 0 ).toInt();
-    config.autorunDelay = settings->value ( "autorun/delay", 0 ).toInt();
-    config.promptForFilterChange = settings->value (
+    autorunConf.autorunCount = settings->value ( "autorun/count", 0 ).toInt();
+    autorunConf.autorunDelay = settings->value ( "autorun/delay", 0 ).toInt();
+    filterConf.promptForFilterChange = settings->value (
         "autorun/filterPrompt", 0 ).toInt();
-    config.interFilterDelay = settings->value (
+    filterConf.interFilterDelay = settings->value (
         "autorun/interFilterDelay", 0 ).toInt();
 
     config.preview = settings->value ( "display/preview", 1 ).toInt();
     config.nightMode = settings->value ( "display/nightMode", 0 ).toInt();
-    config.displayFPS = settings->value ( "display/displayFPS", 15 ).toInt();
+    generalConf.displayFPS = settings->value (
+				"display/displayFPS", 15 ).toInt();
     // fix a problem with existing configs
-    if ( !config.displayFPS ) { config.displayFPS = 15; }
+    if ( !generalConf.displayFPS ) { generalConf.displayFPS = 15; }
 
-    config.splitHistogram = settings->value ( "histogram/split", 0 ).toInt();
-    config.histogramOnTop = settings->value ( "histogram/onTop", 1 ).toInt();
-    config.rawRGBHistogram = settings->value ( "histogram/rawRGB", 1 ).toInt();
+    histogramConf.splitHistogram = settings->value (
+				"histogram/split", 0 ).toInt();
+    histogramConf.histogramOnTop = settings->value (
+				"histogram/onTop", 1 ).toInt();
+    histogramConf.rawRGBHistogram = settings->value (
+				"histogram/rawRGB", 1 ).toInt();
 
-    config.demosaicPreview = settings->value ( "demosaic/preview", 0 ).toInt();
-    config.demosaicOutput = settings->value ( "demosaic/output", 0 ).toInt();
-    config.demosaicMethod = settings->value ( "demosaic/method", 1 ).toInt();
-    config.cfaPattern = settings->value ( "demosaic/cfaPattern",
+    demosaicConf.demosaicPreview = settings->value ( "demosaic/preview",
+				0 ).toInt();
+    demosaicConf.demosaicOutput = settings->value ( "demosaic/output",
+				0 ).toInt();
+    demosaicConf.demosaicMethod = settings->value ( "demosaic/method",
+				1 ).toInt();
+    demosaicConf.cfaPattern = settings->value ( "demosaic/cfaPattern",
         OA_DEMOSAIC_AUTO ).toInt();
+    demosaicConf.monoIsRawColour = settings->value ( "demosaic/monoIsRawColour",
+        1 ).toInt();
 
-    config.reticleStyle = settings->value ( "reticle/style",
+    generalConf.reticleStyle = settings->value ( "reticle/style",
         RETICLE_CIRCLE ).toInt();
 
     // Give up on earlier versions of this data.  It's too complicated to
@@ -529,8 +570,8 @@ MainWindow::readConfig ( void )
           if ( numModifiers )  {
             for ( int i = 0; i < numModifiers; i++ ) {
               settings->setArrayIndex ( i );
-              config.controlValues[i][j] = settings->value ( "controlValue",
-                0 ).toInt();
+              cameraConf.controlValues[i][j] = settings->value (
+									"controlValue", 0 ).toInt();
             }
           }
           settings->endArray();
@@ -544,24 +585,24 @@ MainWindow::readConfig ( void )
     // adjusted accordingly.
 
     if ( version > 3 ) {
-      config.numFilters = settings->beginReadArray ( "filters" );
-      if ( config.numFilters ) {
-        for ( int i = 0; i < config.numFilters; i++ ) {
+      filterConf.numFilters = settings->beginReadArray ( "filters" );
+      if ( filterConf.numFilters ) {
+        for ( int i = 0; i < filterConf.numFilters; i++ ) {
           settings->setArrayIndex ( i );
           FILTER f;
           f.filterName = settings->value ( "name", "" ).toString();
-          config.filters.append ( f );
+          filterConf.filters.append ( f );
         }
       } else {
         // FIX ME -- these should probably be configured elsewhere
         QList<QString> defaults;
         defaults << "None" << "L" << "R" << "G" << "B" << "IR" << "UV" <<
             "Ha" << "Hb" << "S2" << "O3" << "CH4";
-        config.numFilters = defaults.count();
-        for ( int i = 0; i < config.numFilters; i++ ) {
+        filterConf.numFilters = defaults.count();
+        for ( int i = 0; i < filterConf.numFilters; i++ ) {
           FILTER f;
           f.filterName = defaults[i];
-          config.filters.append ( f );
+          filterConf.filters.append ( f );
         }
       }
       settings->endArray();
@@ -589,38 +630,38 @@ MainWindow::readConfig ( void )
               // time through
               FILTER fn;
               fn.filterName = "none";
-              config.filters.append ( fn );
+              filterConf.filters.append ( fn );
               totalFilters++;
               renumberFrom = 0;
               renumberTo = numFilters;
             }
           }
-          config.filters.append ( f );
+          filterConf.filters.append ( f );
           totalFilters++;
         }
       } else {
         FILTER fn;
         fn.filterName = "none";
-        config.filters.append ( fn );
+        filterConf.filters.append ( fn );
         totalFilters++;
       }
       settings->endArray();
-      config.numFilters = totalFilters;
-      if ( config.filterOption >= renumberFrom && config.filterOption <=
-          renumberTo ) {
-        if ( renumberTo < numFilters && config.filterOption ==
+      filterConf.numFilters = totalFilters;
+      if ( commonConfig.filterOption >= renumberFrom &&
+					commonConfig.filterOption <= renumberTo ) {
+        if ( renumberTo < numFilters && commonConfig.filterOption ==
             ( renumberTo + 1 )) {
           // we saw "none" and were currently using it
-          config.filterOption = 0;
+          commonConfig.filterOption = 0;
         } else {
-          config.filterOption++;
+          commonConfig.filterOption++;
         }
       }
     }
 
-    config.numProfiles = settings->beginReadArray ( "profiles" );
-    if ( config.numProfiles ) {
-      for ( int i = 0; i < config.numProfiles; i++ ) {
+    profileConf.numProfiles = settings->beginReadArray ( "profiles" );
+    if ( profileConf.numProfiles ) {
+      for ( int i = 0; i < profileConf.numProfiles; i++ ) {
         settings->setArrayIndex ( i );
         PROFILE p;
         p.profileName = settings->value ( "name", "" ).toString();
@@ -652,9 +693,9 @@ MainWindow::readConfig ( void )
             if ( numFilters ) {
               for ( int k = 0; k < numFilters; k++ ) {
                 settings->setArrayIndex ( k );
-                if ( numFilters <= config.numFilters ) {
+                if ( numFilters <= filterConf.numFilters ) {
                   FILTER_PROFILE fp;
-                  fp.filterName = config.filters[k].filterName;
+                  fp.filterName = filterConf.filters[k].filterName;
                   p.filterProfiles.append ( fp );
                 }
                 // Give up on anything before version 7.  It's just too
@@ -667,7 +708,7 @@ MainWindow::readConfig ( void )
                     if ( numModifiers )  { 
                       for ( int i = 0; i < numModifiers; i++ ) {
                         settings->setArrayIndex ( i );
-                        if ( numFilters <= config.numFilters ) {
+                        if ( numFilters <= filterConf.numFilters ) {
                           p.filterProfiles[ k ].controls[ i ][ j ] =
                               settings->value ( "controlValue", 0 ).toInt();
                         }
@@ -688,26 +729,26 @@ MainWindow::readConfig ( void )
              * Give up on this as of version 7
              *
             int numControls = settings->beginReadArray ( "controls" );
-            if ( config.numFilters ) {
-              for ( int k = 0; k < config.numFilters; k++ ) {
+            if ( filterConf.numFilters ) {
+              for ( int k = 0; k < filterConf.numFilters; k++ ) {
                 FILTER_PROFILE fp;
-                fp.filterName = config.filters[k].filterName;
+                fp.filterName = filterConf.filters[k].filterName;
                 p.filterProfiles.append ( fp );
               }
             }
             for ( int j = 0; j < numControls; j++ ) {
               settings->setArrayIndex ( j );
               int controlValue = settings->value ( "controlValue", 0 ).toInt();
-              if ( config.numFilters ) {
-                for ( int k = 0; k < config.numFilters; k++ ) {
+              if ( filterConf.numFilters ) {
+                for ( int k = 0; k < filterConf.numFilters; k++ ) {
                   p.filterProfiles[ k ].controls[ j ] = controlValue;
                 }
               }
             }
             settings->endArray();
              */
-            if ( config.numFilters ) {
-              for ( int k = 0; k < config.numFilters; k++ ) {
+            if ( filterConf.numFilters ) {
+              for ( int k = 0; k < filterConf.numFilters; k++ ) {
                 p.filterProfiles[ k ].intervalMenuOption = 1; // msec
               }
             }
@@ -728,7 +769,7 @@ MainWindow::readConfig ( void )
               0 ).toInt();
           p.limitType = settings->value ( "limitType", -1 ).toInt();
           p.target = settings->value ( "target", 0 ).toInt();
-          config.profiles.append ( p );
+          profileConf.profiles.append ( p );
         }
       }
       settings->endArray();
@@ -738,49 +779,49 @@ MainWindow::readConfig ( void )
 
       PROFILE p;
       p.profileName = "default";
-      p.binning2x2 = config.binning2x2;
-      p.colourise = config.colourise;
-      p.useROI = config.useROI;
-      p.imageSizeX = config.imageSizeX;
-      p.imageSizeY = config.imageSizeY;
-      if ( config.numFilters ) {
-        for ( int k = 0; k < config.numFilters; k++ ) {
+      p.binning2x2 = commonConfig.binning2x2;
+      p.colourise = commonConfig.colourise;
+      p.useROI = commonConfig.useROI;
+      p.imageSizeX = commonConfig.imageSizeX;
+      p.imageSizeY = commonConfig.imageSizeY;
+      if ( filterConf.numFilters ) {
+        for ( int k = 0; k < filterConf.numFilters; k++ ) {
           FILTER_PROFILE fp;
-          fp.filterName = config.filters[k].filterName;
+          fp.filterName = filterConf.filters[k].filterName;
           fp.intervalMenuOption = 1; // msec
           p.filterProfiles.append ( fp );
         }
       }
       for ( int j = 1; j < OA_CAM_CTRL_LAST_P1; j++ ) {
-        if ( config.numFilters ) {
-	  for ( int k = 0; k < config.numFilters; k++ ) {
+        if ( filterConf.numFilters ) {
+	  for ( int k = 0; k < filterConf.numFilters; k++ ) {
             for ( int i = 0; i < OA_CAM_CTRL_MODIFIERS_P1; i++ ) {
               p.filterProfiles[ k ].controls[ i ][ j ] =
-                  config.controlValues[ i ][ j ];
+                  cameraConf.controlValues[ i ][ j ];
             }
           }
         }
       }
 
-      p.frameRateNumerator = config.frameRateNumerator;
-      p.frameRateDenominator = config.frameRateDenominator;
-      p.filterOption = config.filterOption;
-      p.fileTypeOption = config.fileTypeOption;
-      p.fileNameTemplate = config.fileNameTemplate;
-      p.limitEnabled = config.limitEnabled;
-      p.framesLimitValue = config.framesLimitValue;
-      p.secondsLimitValue = config.secondsLimitValue;
-      p.limitType = config.limitType;
+      p.frameRateNumerator = commonConfig.frameRateNumerator;
+      p.frameRateDenominator = commonConfig.frameRateDenominator;
+      p.filterOption = commonConfig.filterOption;
+      p.fileTypeOption = commonConfig.fileTypeOption;
+      p.fileNameTemplate = commonConfig.fileNameTemplate;
+      p.limitEnabled = commonConfig.limitEnabled;
+      p.framesLimitValue = commonConfig.framesLimitValue;
+      p.secondsLimitValue = commonConfig.secondsLimitValue;
+      p.limitType = commonConfig.limitType;
       p.target = TGT_UNKNOWN;
-      config.profiles.append ( p );
-      config.numProfiles = 1;
+      profileConf.profiles.append ( p );
+      profileConf.numProfiles = 1;
     }
 
     if ( version > 4 ) {
       ( void ) settings->beginReadArray ( "filterSlots" );
       for ( int i = 0; i < MAX_FILTER_SLOTS; i++ ) {
         settings->setArrayIndex ( i );
-        config.filterSlots[i] = settings->value ( "slot", -1 ).toInt();
+        filterConf.filterSlots[i] = settings->value ( "slot", -1 ).toInt();
       }
       settings->endArray();
 
@@ -788,7 +829,7 @@ MainWindow::readConfig ( void )
       if ( numSeqs ) {
         for ( int i = 0; i < numSeqs; i++ ) {
           settings->setArrayIndex ( i );
-          config.autorunFilterSequence.append ( settings->value (
+          filterConf.autorunFilterSequence.append ( settings->value (
               "slot", -1 ).toInt());
         }
       }
@@ -819,11 +860,11 @@ MainWindow::readConfig ( void )
     }
   }
 
-  config.filterWheelConfig.clear();
+  commonConfig.filterWheelConfig.clear();
   for ( int i = 0; i < OA_FW_IF_COUNT; i++ ) {
     userConfigList	conf;
     conf.clear();
-    config.filterWheelConfig.append ( conf );
+    commonConfig.filterWheelConfig.append ( conf );
   }
   int numInterfaces = settings->beginReadArray ( "filterWheelUserConfig" );
   if ( numInterfaces ) {
@@ -844,7 +885,7 @@ MainWindow::readConfig ( void )
               0 ).toString().toStdString().c_str());
           ( void ) strcpy ( c.filesystemPath, settings->value ( "fsPath",
               0 ).toString().toStdString().c_str());
-          config.filterWheelConfig[i].append ( c );
+          commonConfig.filterWheelConfig[i].append ( c );
         }
       }
       settings->endArray();
@@ -852,11 +893,11 @@ MainWindow::readConfig ( void )
     settings->endArray();
   }
 
-  config.timerConfig.clear();
+  commonConfig.timerConfig.clear();
   for ( int i = 0; i < OA_TIMER_IF_COUNT; i++ ) {
     userConfigList      conf;
     conf.clear();
-    config.timerConfig.append ( conf );
+    commonConfig.timerConfig.append ( conf );
   }
   numInterfaces = settings->beginReadArray ( "ptrUserConfig" );
   if ( numInterfaces ) {
@@ -877,7 +918,7 @@ MainWindow::readConfig ( void )
               0 ).toString().toStdString().c_str());
           ( void ) strcpy ( c.filesystemPath, settings->value ( "fsPath",
               0 ).toString().toStdString().c_str());
-          config.timerConfig[i].append ( c );
+          commonConfig.timerConfig[i].append ( c );
         }
       }
       settings->endArray();
@@ -885,319 +926,346 @@ MainWindow::readConfig ( void )
     settings->endArray();
   }
 
-  if ( !config.saveSettings || config.saveSettings == -1 ) {
-    config.saveSettings = -config.saveSettings;
+  if ( !generalConf.saveSettings || generalConf.saveSettings == -1 ) {
+    generalConf.saveSettings = -generalConf.saveSettings;
   }
 
-  config.fitsObserver = settings->value ( "fits/observer", "" ).toString();
-  config.fitsInstrument = settings->value ( "fits/instrument", "" ).toString();
-  config.fitsObject = settings->value ( "fits/object", "" ).toString();
-  config.fitsComment = settings->value ( "fits/comment", "" ).toString();
-  config.fitsTelescope = settings->value ( "fits/telescope", "" ).toString();
-  config.fitsFocalLength = settings->value (
-      "fits/focalLength", "" ).toString();
-  config.fitsApertureDia = settings->value (
-      "fits/apertureDia", "" ).toString();
-  config.fitsApertureArea = settings->value (
+  fitsConf.observer = settings->value ( "fits/observer", "" ).toString();
+  fitsConf.instrument = settings->value ( "fits/instrument", "" ).toString();
+  fitsConf.object = settings->value ( "fits/object", "" ).toString();
+  fitsConf.comment = settings->value ( "fits/comment", "" ).toString();
+  fitsConf.telescope = settings->value ( "fits/telescope", "" ).toString();
+  fitsConf.focalLength = settings->value ( "fits/focalLength", "" ).toString();
+  fitsConf.apertureDia = settings->value ( "fits/apertureDia", "" ).toString();
+  fitsConf.apertureArea = settings->value (
       "fits/apertureArea", "" ).toString();
-  config.fitsPixelSizeX = settings->value ( "fits/pixelSizeX", "" ).toString();
-  config.fitsPixelSizeY = settings->value ( "fits/pixelSizeY", "" ).toString();
-  config.fitsSubframeOriginX = settings->value (
+  fitsConf.pixelSizeX = settings->value ( "fits/pixelSizeX", "" ).toString();
+  fitsConf.pixelSizeY = settings->value ( "fits/pixelSizeY", "" ).toString();
+  fitsConf.subframeOriginX = settings->value (
       "fits/subframeOriginX", "" ).toString();
-  config.fitsSubframeOriginY = settings->value (
+  fitsConf.subframeOriginY = settings->value (
       "fits/subframeOriginY", "" ).toString();
-  config.fitsSiteLatitude = settings->value (
+  fitsConf.siteLatitude = settings->value (
       "fits/siteLatitude", "" ).toString();
-  config.fitsSiteLongitude = settings->value (
+  fitsConf.siteLongitude = settings->value (
       "fits/siteLongitude", "" ).toString();
-  config.fitsFilter = settings->value ( "fits/filter", "" ).toString();
+  fitsConf.filter = settings->value ( "fits/filter", "" ).toString();
 
-  config.timerMode = settings->value ( "timer/mode",
+  timerConf.timerMode = settings->value ( "timer/mode",
       OA_TIMER_MODE_UNSET ).toInt();
-  config.timerEnabled = settings->value ( "timer/enabled", 0 ).toInt();
-  config.triggerInterval = settings->value ( "timer/triggerInterval",
+  timerConf.timerEnabled = settings->value ( "timer/enabled", 0 ).toInt();
+  timerConf.triggerInterval = settings->value ( "timer/triggerInterval",
       1 ).toInt();
-  config.userDrainDelayEnabled = settings->value ( "timer/drainDelayEnabled",
+  timerConf.userDrainDelayEnabled = settings->value ( "timer/drainDelayEnabled",
       0 ).toInt();
-  config.drainDelay = settings->value ( "timer/drainDelay", 500 ).toInt();
-  config.timestampDelay = settings->value ( "timer/timestampDelay",
+  timerConf.drainDelay = settings->value ( "timer/drainDelay", 500 ).toInt();
+  timerConf.timestampDelay = settings->value ( "timer/timestampDelay",
       50 ).toInt();
-  config.queryGPSForEachCapture = settings->value (
+  timerConf.queryGPSForEachCapture = settings->value (
       "timer/queryGPSForEachCapture", 0 ).toInt();
+  timerConf.externalLEDEnabled = settings->value (
+      "timer/externalLEDEnabled", 0 ).toInt();
+
+  delete settings;
 }
 
 
 void
-MainWindow::writeConfig ( void )
+MainWindow::writeConfig ( QString configFile )
 {
-  if ( !config.saveSettings ) {
+  QSettings*  settings;
+
+  if ( !generalConf.saveSettings ) {
     return;
   }
 
+  if ( configFile != "" ) {
+    settings = new QSettings ( configFile, QSettings::IniFormat );
+  } else {
 #if defined(__APPLE__) && defined(__MACH__) && TARGET_OS_MAC == 1
-  QSettings settings ( QSettings::IniFormat, QSettings::UserScope,
+    settings = new QSettings ( QSettings::IniFormat, QSettings::UserScope,
                             ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
 #else
-  QSettings settings ( ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
+    settings = new QSettings ( ORGANISATION_NAME_SETTINGS, APPLICATION_NAME );
 #endif
+  }
 
-  settings.clear();
+  settings->clear();
 
-  settings.setValue ( "saveSettings", config.saveSettings );
+  settings->setValue ( "saveSettings", generalConf.saveSettings );
 
-  settings.setValue ( "configVersion", CONFIG_VERSION );
-  settings.setValue ( "geometry", geometry());
+  settings->setValue ( "configVersion", CONFIG_VERSION );
+  settings->setValue ( "geometry", geometry());
 
-  settings.setValue ( "tempsInCentigrade", config.tempsInC );
-  settings.setValue ( "connectSoleCamera", config.connectSoleCamera );
-  settings.setValue ( "dockableControls", config.dockableControls );
-  settings.setValue ( "controlsOnRight", config.controlsOnRight );
-  settings.setValue ( "separateControls", config.separateControls );
-  settings.setValue ( "saveCaptureSettings", config.saveCaptureSettings );
-  settings.setValue ( "windowsCompatibleAVI", config.windowsCompatibleAVI );
-  settings.setValue ( "useUtVideo", config.useUtVideo );
-  settings.setValue ( "indexDigits", config.indexDigits );
+  settings->setValue ( "tempsInCentigrade", generalConf.tempsInC );
+  settings->setValue ( "connectSoleCamera", generalConf.connectSoleCamera );
+  settings->setValue ( "dockableControls", generalConf.dockableControls );
+  settings->setValue ( "controlsOnRight", generalConf.controlsOnRight );
+  settings->setValue ( "separateControls", generalConf.separateControls );
+  settings->setValue ( "saveCaptureSettings",
+			generalConf.saveCaptureSettings );
+
+  settings->setValue ( "windowsCompatibleAVI",
+			captureConf.windowsCompatibleAVI );
+  settings->setValue ( "useUtVideo", captureConf.useUtVideo );
+  settings->setValue ( "indexDigits", captureConf.indexDigits );
 
   // FIX ME -- how to handle this?
-  // settings.setValue ( "device/camera", -1 ).toInt();
+  // settings->setValue ( "device/camera", -1 ).toInt();
 
-  settings.setValue ( "options/showHistogram", config.showHistogram );
-  settings.setValue ( "options/autoAlign", config.autoAlign );
-  settings.setValue ( "options/showReticle", config.showReticle );
-  settings.setValue ( "options/cutout", config.cutout );
-  settings.setValue ( "options/showFocusAid", config.showFocusAid );
-  settings.setValue ( "options/darkFrame", config.darkFrame );
-  settings.setValue ( "options/flipX", config.flipX );
-  settings.setValue ( "options/flipY", config.flipY );
-  settings.setValue ( "options/demosaic", config.demosaic );
+  settings->setValue ( "options/showHistogram", config.showHistogram );
+  settings->setValue ( "options/autoAlign", config.autoAlign );
+  settings->setValue ( "options/showReticle", config.showReticle );
+  settings->setValue ( "options/cutout", config.cutout );
+  settings->setValue ( "options/showFocusAid", config.showFocusAid );
+  settings->setValue ( "options/darkFrame", config.darkFrame );
+  settings->setValue ( "options/flipX", config.flipX );
+  settings->setValue ( "options/flipY", config.flipY );
+  settings->setValue ( "options/demosaic", commonConfig.demosaic );
 
-  settings.setValue ( "camera/binning2x2", config.binning2x2 );
-  settings.setValue ( "camera/colourise", config.colourise );
-  settings.setValue ( "camera/inputFrameFormat", config.inputFrameFormat );
-  settings.setValue ( "camera/forceInputFrameFormat",
-      config.forceInputFrameFormat );
+  settings->setValue ( "camera/binning2x2", commonConfig.binning2x2 );
+  settings->setValue ( "camera/colourise", commonConfig.colourise );
+  settings->setValue ( "camera/inputFrameFormat", config.inputFrameFormat );
+  settings->setValue ( "camera/forceInputFrameFormat",
+      cameraConf.forceInputFrameFormat );
 
-  settings.setValue ( "image/useROI", config.useROI );
-  settings.setValue ( "image/imageSizeX", config.imageSizeX );
-  settings.setValue ( "image/imageSizeY", config.imageSizeY );
+  settings->setValue ( "image/useROI", commonConfig.useROI );
+  settings->setValue ( "image/imageSizeX", commonConfig.imageSizeX );
+  settings->setValue ( "image/imageSizeY", commonConfig.imageSizeY );
 
-  settings.setValue ( "image/zoomButton1Option", config.zoomButton1Option );
-  settings.setValue ( "image/zoomButton2Option", config.zoomButton2Option );
-  settings.setValue ( "image/zoomButton3Option", config.zoomButton3Option );
-  settings.setValue ( "image/zoomValue", config.zoomValue );
+  settings->setValue ( "image/zoomButton1Option", config.zoomButton1Option );
+  settings->setValue ( "image/zoomButton2Option", config.zoomButton2Option );
+  settings->setValue ( "image/zoomButton3Option", config.zoomButton3Option );
+  settings->setValue ( "image/zoomValue", config.zoomValue );
 
-  settings.setValue ( "control/exposureMenuOption", config.exposureMenuOption );
-  settings.setValue ( "control/frameRateNumerator", config.frameRateNumerator );
-  settings.setValue ( "control/frameRateDenominator",
-      config.frameRateDenominator );
-  settings.setValue ( "control/selectableControl1",
+  settings->setValue ( "control/exposureMenuOption",
+      config.exposureMenuOption );
+  settings->setValue ( "control/frameRateNumerator",
+      commonConfig.frameRateNumerator );
+  settings->setValue ( "control/frameRateDenominator",
+      commonConfig.frameRateDenominator );
+  settings->setValue ( "control/selectableControl1",
       config.selectableControl[0] );
-  settings.setValue ( "control/selectableControl2",
+  settings->setValue ( "control/selectableControl2",
       config.selectableControl[1] );
-  settings.setValue ( "control/intervalMenuOption",
+  settings->setValue ( "control/intervalMenuOption",
       config.intervalMenuOption );
 
-  settings.setValue ( "control/profileOption", config.profileOption );
-  settings.setValue ( "control/filterOption", config.filterOption );
-  settings.setValue ( "control/fileTypeOption", config.fileTypeOption );
-  settings.setValue ( "control/limitEnabled", config.limitEnabled );
-  settings.setValue ( "control/framesLimitValue", config.framesLimitValue );
-  settings.setValue ( "control/secondsLimitValue", config.secondsLimitValue );
-  settings.setValue ( "control/limitType", config.limitType );
-  settings.setValue ( "control/fileNameTemplate", config.fileNameTemplate );
-  settings.setValue ( "control/captureDirectory", config.captureDirectory );
+  settings->setValue ( "control/profileOption", commonConfig.profileOption );
+  settings->setValue ( "control/filterOption", commonConfig.filterOption );
+  settings->setValue ( "control/fileTypeOption", commonConfig.fileTypeOption );
+  settings->setValue ( "control/limitEnabled", commonConfig.limitEnabled );
+  settings->setValue ( "control/framesLimitValue",
+			commonConfig.framesLimitValue );
+  settings->setValue ( "control/secondsLimitValue",
+			commonConfig.secondsLimitValue );
+  settings->setValue ( "control/limitType", commonConfig.limitType );
+  settings->setValue ( "control/fileNameTemplate",
+			commonConfig.fileNameTemplate );
+  settings->setValue ( "control/captureDirectory",
+			commonConfig.captureDirectory );
 
-  settings.setValue ( "autorun/count", config.autorunCount );
-  settings.setValue ( "autorun/delay", config.autorunDelay );
-  settings.setValue ( "autorun/filterPrompt", config.promptForFilterChange );
-  settings.setValue ( "autorun/interFilterDelay",
-      config.interFilterDelay );
+  settings->setValue ( "autorun/count", autorunConf.autorunCount );
+  settings->setValue ( "autorun/delay", autorunConf.autorunDelay );
+  settings->setValue ( "autorun/filterPrompt",
+			filterConf.promptForFilterChange );
+  settings->setValue ( "autorun/interFilterDelay",
+      filterConf.interFilterDelay );
 
-  settings.setValue ( "display/preview", config.preview );
-  settings.setValue ( "display/nightMode", config.nightMode );
-  settings.setValue ( "display/displayFPS", config.displayFPS );
+  settings->setValue ( "display/preview", config.preview );
+  settings->setValue ( "display/nightMode", config.nightMode );
+  settings->setValue ( "display/displayFPS", generalConf.displayFPS );
 
-  settings.setValue ( "histogram/split", config.splitHistogram );
-  settings.setValue ( "histogram/onTop", config.histogramOnTop );
-  settings.setValue ( "histogram/rawRGB", config.rawRGBHistogram );
+  settings->setValue ( "histogram/split", histogramConf.splitHistogram );
+  settings->setValue ( "histogram/onTop", histogramConf.histogramOnTop );
+  settings->setValue ( "histogram/rawRGB", histogramConf.rawRGBHistogram );
 
-  settings.setValue ( "demosaic/preview", config.demosaicPreview );
-  settings.setValue ( "demosaic/output", config.demosaicOutput );
-  settings.setValue ( "demosaic/method", config.demosaicMethod );
-  settings.setValue ( "demosaic/cfaPattern", config.cfaPattern );
+  settings->setValue ( "demosaic/preview", demosaicConf.demosaicPreview );
+  settings->setValue ( "demosaic/output", demosaicConf.demosaicOutput );
+  settings->setValue ( "demosaic/method", demosaicConf.demosaicMethod );
+  settings->setValue ( "demosaic/monoIsRawColour",
+			demosaicConf.monoIsRawColour );
+  settings->setValue ( "demosaic/cfaPattern", demosaicConf.cfaPattern );
 
-  settings.setValue ( "reticle/style", config.reticleStyle );
+  settings->setValue ( "reticle/style", generalConf.reticleStyle );
 
-  settings.beginWriteArray ( "controls" );
+  settings->beginWriteArray ( "controls" );
   for ( int i = 1; i < OA_CAM_CTRL_LAST_P1; i++ ) {
-    settings.setArrayIndex ( i-1 );
+    settings->setArrayIndex ( i-1 );
     // don't particularly like this cast, but it seems to be the only way
     // to do it
-    settings.setValue ( "controlValue",
-        ( qlonglong ) config.controlValues[i] );
+    settings->setValue ( "controlValue",
+        ( qlonglong ) cameraConf.controlValues[i] );
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "filters" );
-  if ( config.numFilters ) {
-    for ( int i = 0; i < config.numFilters; i++ ) {
-      settings.setArrayIndex ( i );
-      settings.setValue ( "name", config.filters[i].filterName );
+  settings->beginWriteArray ( "filters" );
+  if ( filterConf.numFilters ) {
+    for ( int i = 0; i < filterConf.numFilters; i++ ) {
+      settings->setArrayIndex ( i );
+      settings->setValue ( "name", filterConf.filters[i].filterName );
     }
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "profiles" );
-  if ( config.numProfiles ) {
-    for ( int i = 0; i < config.numProfiles; i++ ) {
-      settings.setArrayIndex ( i );
-      settings.setValue ( "name", config.profiles[i].profileName );
-      settings.setValue ( "binning2x2", config.profiles[i].binning2x2 );
-      settings.setValue ( "colourise", config.profiles[i].colourise );
-      settings.setValue ( "useROI", config.profiles[i].useROI );
-      settings.setValue ( "imageSizeX", config.profiles[i].imageSizeX );
-      settings.setValue ( "imageSizeY", config.profiles[i].imageSizeY );
+  settings->beginWriteArray ( "profiles" );
+  if ( profileConf.numProfiles ) {
+    for ( int i = 0; i < profileConf.numProfiles; i++ ) {
+      settings->setArrayIndex ( i );
+      settings->setValue ( "name", profileConf.profiles[i].profileName );
+      settings->setValue ( "binning2x2", profileConf.profiles[i].binning2x2 );
+      settings->setValue ( "colourise", profileConf.profiles[i].colourise );
+      settings->setValue ( "useROI", profileConf.profiles[i].useROI );
+      settings->setValue ( "imageSizeX", profileConf.profiles[i].imageSizeX );
+      settings->setValue ( "imageSizeY", profileConf.profiles[i].imageSizeY );
 
-      if ( config.numFilters &&
-          !config.profiles[ i ].filterProfiles.isEmpty()) {
-        settings.beginWriteArray ( "filters" );
-        for ( int j = 0; j < config.numFilters; j++ ) {
-          settings.setArrayIndex ( j );
-          settings.setValue ( "intervalMenuOption",
-              config.profiles[ i ].filterProfiles[ j ].intervalMenuOption );
-          settings.beginWriteArray ( "controls" );
+      if ( filterConf.numFilters &&
+          !profileConf.profiles[ i ].filterProfiles.isEmpty()) {
+        settings->beginWriteArray ( "filters" );
+        for ( int j = 0; j < filterConf.numFilters; j++ ) {
+          settings->setArrayIndex ( j );
+          settings->setValue ( "intervalMenuOption",
+              profileConf.profiles[i].filterProfiles[ j ].intervalMenuOption );
+          settings->beginWriteArray ( "controls" );
           for ( int k = 1; k < OA_CAM_CTRL_LAST_P1; k++ ) {
-            settings.setArrayIndex ( k );
-            settings.beginWriteArray ( "modifiers" );
+            settings->setArrayIndex ( k - 1 );
+            settings->beginWriteArray ( "modifiers" );
             for ( int l = 0; l < OA_CAM_CTRL_MODIFIERS_P1; l++ ) {
-              settings.setArrayIndex ( l );
-              settings.setValue ( "controlValue",
-                  config.profiles[ i ].filterProfiles[ j ].controls[ l ][ k ]);
+              settings->setArrayIndex ( l );
+              settings->setValue ( "controlValue",
+                  profileConf.profiles[i].filterProfiles[j].controls[l][k]);
             }
-            settings.endArray();
+            settings->endArray();
           }
-          settings.endArray();
+          settings->endArray();
         }
-        settings.endArray();
+        settings->endArray();
       }
-      settings.setValue ( "frameRateNumerator",
-          config.profiles[i].frameRateNumerator );
-      settings.setValue ( "frameRateDenominator",
-          config.profiles[i].frameRateDenominator );
-      settings.setValue ( "filterOption", config.profiles[i].filterOption );
-      settings.setValue ( "fileTypeOption", config.profiles[i].fileTypeOption );
-      settings.setValue ( "fileNameTemplate",
-          config.profiles[i].fileNameTemplate );
-      settings.setValue ( "limitEnabled", config.profiles[i].limitEnabled );
-      settings.setValue ( "framesLimitValue",
-          config.profiles[i].framesLimitValue );
-      settings.setValue ( "secondsLimitValue",
-          config.profiles[i].secondsLimitValue );
-      settings.setValue ( "limitType", config.profiles[i].limitType );
-      settings.setValue ( "target", config.profiles[i].target );
+      settings->setValue ( "frameRateNumerator",
+          profileConf.profiles[i].frameRateNumerator );
+      settings->setValue ( "frameRateDenominator",
+          profileConf.profiles[i].frameRateDenominator );
+      settings->setValue ( "filterOption",
+					profileConf.profiles[i].filterOption );
+      settings->setValue ( "fileTypeOption",
+          profileConf.profiles[i].fileTypeOption );
+      settings->setValue ( "fileNameTemplate",
+          profileConf.profiles[i].fileNameTemplate );
+      settings->setValue ( "limitEnabled",
+					profileConf.profiles[i].limitEnabled );
+      settings->setValue ( "framesLimitValue",
+          profileConf.profiles[i].framesLimitValue );
+      settings->setValue ( "secondsLimitValue",
+          profileConf.profiles[i].secondsLimitValue );
+      settings->setValue ( "limitType", profileConf.profiles[i].limitType );
+      settings->setValue ( "target", profileConf.profiles[i].target );
     }
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "filterSlots" );
+  settings->beginWriteArray ( "filterSlots" );
   for ( int i = 0; i < MAX_FILTER_SLOTS; i++ ) {
-    settings.setArrayIndex ( i );
-    settings.setValue ( "slot", config.filterSlots[i] );
+    settings->setArrayIndex ( i );
+    settings->setValue ( "slot", filterConf.filterSlots[i] );
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "filterSequence" );
+  settings->beginWriteArray ( "filterSequence" );
   int numSeqs;
-  if (( numSeqs = config.autorunFilterSequence.count())) {
+  if (( numSeqs = filterConf.autorunFilterSequence.count())) {
     for ( int i = 0; i < numSeqs; i++ ) {
-      settings.setArrayIndex ( i );
-      settings.setValue ( "slot", config.autorunFilterSequence[i] );
+      settings->setArrayIndex ( i );
+      settings->setValue ( "slot", filterConf.autorunFilterSequence[i] );
     }
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "filterWheelUserConfig" );
-  int numInterfaces = config.filterWheelConfig.count();
+  settings->beginWriteArray ( "filterWheelUserConfig" );
+  int numInterfaces = commonConfig.filterWheelConfig.count();
   for ( int i = 0; i < numInterfaces; i++ ) {
-    settings.setArrayIndex ( i );
-    settings.beginWriteArray ( "matches" );
-    int numMatches = config.filterWheelConfig[i].count();
-    userConfigList confList = config.filterWheelConfig[i];
+    settings->setArrayIndex ( i );
+    settings->beginWriteArray ( "matches" );
+    int numMatches = commonConfig.filterWheelConfig[i].count();
+    userConfigList confList = commonConfig.filterWheelConfig[i];
     for ( int j = 0; j < numMatches; j++ ) {
-      settings.setArrayIndex ( j );
-      settings.setValue ( "vendorId", confList[j].vendorId );
-      settings.setValue ( "productId", confList[j].productId );
-      settings.setValue ( "manufacturer", confList[j].manufacturer );
-      settings.setValue ( "product", confList[j].product );
-      settings.setValue ( "serialNo", confList[j].serialNo );
-      settings.setValue ( "fsPath", confList[j].filesystemPath );
+      settings->setArrayIndex ( j );
+      settings->setValue ( "vendorId", confList[j].vendorId );
+      settings->setValue ( "productId", confList[j].productId );
+      settings->setValue ( "manufacturer", confList[j].manufacturer );
+      settings->setValue ( "product", confList[j].product );
+      settings->setValue ( "serialNo", confList[j].serialNo );
+      settings->setValue ( "fsPath", confList[j].filesystemPath );
     }
-    settings.endArray();
+    settings->endArray();
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.beginWriteArray ( "ptrUserConfig" );
-  numInterfaces = config.timerConfig.count();
+  settings->beginWriteArray ( "ptrUserConfig" );
+  numInterfaces = commonConfig.timerConfig.count();
   for ( int i = 0; i < numInterfaces; i++ ) {
-    settings.setArrayIndex ( i );
-    settings.beginWriteArray ( "matches" );
-    int numMatches = config.timerConfig[i].count();
-    userConfigList confList = config.timerConfig[i];
+    settings->setArrayIndex ( i );
+    settings->beginWriteArray ( "matches" );
+    int numMatches = commonConfig.timerConfig[i].count();
+    userConfigList confList = commonConfig.timerConfig[i];
     for ( int j = 0; j < numMatches; j++ ) {
-      settings.setArrayIndex ( j );
-      settings.setValue ( "vendorId", confList[j].vendorId );
-      settings.setValue ( "productId", confList[j].productId );
-      settings.setValue ( "manufacturer", confList[j].manufacturer );
-      settings.setValue ( "product", confList[j].product );
-      settings.setValue ( "serialNo", confList[j].serialNo );
-      settings.setValue ( "fsPath", confList[j].filesystemPath );
+      settings->setArrayIndex ( j );
+      settings->setValue ( "vendorId", confList[j].vendorId );
+      settings->setValue ( "productId", confList[j].productId );
+      settings->setValue ( "manufacturer", confList[j].manufacturer );
+      settings->setValue ( "product", confList[j].product );
+      settings->setValue ( "serialNo", confList[j].serialNo );
+      settings->setValue ( "fsPath", confList[j].filesystemPath );
     }
-    settings.endArray();
+    settings->endArray();
   }
-  settings.endArray();
+  settings->endArray();
 
   int r = config.currentColouriseColour.red();
   int g = config.currentColouriseColour.green();
   int b = config.currentColouriseColour.blue();
-  settings.setValue ( "colourise/currentColour/red", r );
-  settings.setValue ( "colourise/currentColour/green", g );
-  settings.setValue ( "colourise/currentColour/blue", b );
-  settings.beginWriteArray ( "colourise/customColours" );
+  settings->setValue ( "colourise/currentColour/red", r );
+  settings->setValue ( "colourise/currentColour/green", g );
+  settings->setValue ( "colourise/currentColour/blue", b );
+  settings->beginWriteArray ( "colourise/customColours" );
   for ( int i = 0; i < config.numCustomColours; i++ ) {
-    settings.setArrayIndex ( i );
+    settings->setArrayIndex ( i );
     r = config.customColours[i].red();
     g = config.customColours[i].green();
     b = config.customColours[i].blue();
-    settings.setValue ( "red", r );
-    settings.setValue ( "green", g );
-    settings.setValue ( "blue", b );
+    settings->setValue ( "red", r );
+    settings->setValue ( "green", g );
+    settings->setValue ( "blue", b );
   }
-  settings.endArray();
+  settings->endArray();
 
-  settings.setValue ( "fits/observer", config.fitsObserver );
-  settings.setValue ( "fits/instrument", config.fitsInstrument );
-  settings.setValue ( "fits/object", config.fitsObject );
-  settings.setValue ( "fits/comment", config.fitsComment );
-  settings.setValue ( "fits/telescope", config.fitsTelescope );
-  settings.setValue ( "fits/focalLength", config.fitsFocalLength );
-  settings.setValue ( "fits/apertureDia", config.fitsApertureDia );
-  settings.setValue ( "fits/apertureArea", config.fitsApertureArea );
-  settings.setValue ( "fits/pixelSizeX", config.fitsPixelSizeX );
-  settings.setValue ( "fits/pixelSizeY", config.fitsPixelSizeY );
-  settings.setValue ( "fits/subframeOriginX", config.fitsSubframeOriginX );
-  settings.setValue ( "fits/subframeOriginY", config.fitsSubframeOriginY );
-  settings.setValue ( "fits/siteLatitude", config.fitsSiteLatitude );
-  settings.setValue ( "fits/siteLongitude", config.fitsSiteLongitude );
-  settings.setValue ( "fits/filter", config.fitsFilter );
+  settings->setValue ( "fits/observer", fitsConf.observer );
+  settings->setValue ( "fits/instrument", fitsConf.instrument );
+  settings->setValue ( "fits/object", fitsConf.object );
+  settings->setValue ( "fits/comment", fitsConf.comment );
+  settings->setValue ( "fits/telescope", fitsConf.telescope );
+  settings->setValue ( "fits/focalLength", fitsConf.focalLength );
+  settings->setValue ( "fits/apertureDia", fitsConf.apertureDia );
+  settings->setValue ( "fits/apertureArea", fitsConf.apertureArea );
+  settings->setValue ( "fits/pixelSizeX", fitsConf.pixelSizeX );
+  settings->setValue ( "fits/pixelSizeY", fitsConf.pixelSizeY );
+  settings->setValue ( "fits/subframeOriginX", fitsConf.subframeOriginX );
+  settings->setValue ( "fits/subframeOriginY", fitsConf.subframeOriginY );
+  settings->setValue ( "fits/siteLatitude", fitsConf.siteLatitude );
+  settings->setValue ( "fits/siteLongitude", fitsConf.siteLongitude );
+  settings->setValue ( "fits/filter", fitsConf.filter );
 
-  settings.setValue ( "timer/mode", config.timerMode );
-  settings.setValue ( "timer/enabled", config.timerEnabled );
-  settings.setValue ( "timer/triggerInterval", config.triggerInterval );
-  settings.setValue ( "timer/drainDelayEnabled", config.userDrainDelayEnabled );
-  settings.setValue ( "timer/drainDelay", config.drainDelay );
-  settings.setValue ( "timer/timestampDelay", config.timestampDelay );
-  settings.setValue ( "timer/queryGPSForEachCapture",
-      config.queryGPSForEachCapture );
+  settings->setValue ( "timer/mode", timerConf.timerMode );
+  settings->setValue ( "timer/enabled", timerConf.timerEnabled );
+  settings->setValue ( "timer/triggerInterval", timerConf.triggerInterval );
+  settings->setValue ( "timer/drainDelayEnabled",
+      timerConf.userDrainDelayEnabled );
+  settings->setValue ( "timer/drainDelay", timerConf.drainDelay );
+  settings->setValue ( "timer/timestampDelay", timerConf.timestampDelay );
+  settings->setValue ( "timer/queryGPSForEachCapture",
+      timerConf.queryGPSForEachCapture );
+  settings->setValue ( "timer/externalLEDEnabled",
+			timerConf.externalLEDEnabled );
+  settings->sync();
 }
 
 
@@ -1317,7 +1385,7 @@ MainWindow::createMenus ( void )
   colourise = new QAction ( tr ( "False Colour" ), this );
   colourise->setCheckable ( true );
   connect ( colourise, SIGNAL( changed()), this, SLOT( enableColouriseMode()));
-  colourise->setChecked ( config.colourise );
+  colourise->setChecked ( commonConfig.colourise );
 
   preview = new QAction ( tr ( "Preview on/off" ), this );
   preview->setCheckable ( true );
@@ -1341,7 +1409,7 @@ MainWindow::createMenus ( void )
   demosaicOpt = new QAction ( QIcon ( ":/qt-icons/mosaic.png" ),
       tr ( "Demosaic" ), this );
   demosaicOpt->setCheckable ( true );
-  demosaicOpt->setChecked ( config.demosaic );
+  demosaicOpt->setChecked ( commonConfig.demosaic );
   connect ( demosaicOpt, SIGNAL( changed()), this, SLOT( enableDemosaic()));
 
   optionsMenu = menuBar()->addMenu ( tr ( "&Options" ));
@@ -1478,7 +1546,8 @@ MainWindow::connectCamera ( int deviceIndex )
   doDisconnectCam();
 
   for ( attempt = 0, ret = 1; ret == 1 && attempt < 2; attempt++ ) {
-    if (( ret = state.camera->initialise ( cameraDevs[ deviceIndex ] ))) {
+    if (( ret = commonState.camera->initialise ( cameraDevs[ deviceIndex ],
+					APPLICATION_NAME, TOP_WIDGET ))) {
       if ( !attempt && ret == 1 ) {
         if ( connectedCameras == 1 ) {
           // we think a rescan should be sufficient to identify the camera
@@ -1516,25 +1585,28 @@ MainWindow::connectCamera ( int deviceIndex )
 
   disconnectCam->setEnabled( 1 );
   rescanCam->setEnabled( 0 );
+  resetCam->setEnabled( 1 );
   // Now it gets a bit messy.  The camera should get the settings from
   // the current profile, but the configure() functions take the current
   // values, set them in the camera and write them to the current
   // profile.
-  if ( config.profileOption >= 0 && config.profileOption <
-      config.numProfiles && config.filterOption >= 0 && config.filterOption <
-      config.numFilters ) {
+  if ( commonConfig.profileOption >= 0 && commonConfig.profileOption <
+      profileConf.numProfiles && commonConfig.filterOption >= 0 &&
+			commonConfig.filterOption < filterConf.numFilters ) {
     for ( uint8_t c = 1; c < OA_CAM_CTRL_LAST_P1; c++ ) {
       for ( uint8_t m = 1; m < OA_CAM_CTRL_MODIFIERS_P1; m++ ) {
-        config.controlValues[ m ][ c ] =
-          config.profiles[ config.profileOption ].filterProfiles[
-              config.filterOption ].controls[ m ][ c ];
+        cameraConf.controlValues[ m ][ c ] =
+          profileConf.profiles[ commonConfig.profileOption ].filterProfiles[
+              commonConfig.filterOption ].controls[ m ][ c ];
       }
     }
-    config.intervalMenuOption = config.profiles[ config.profileOption ].
-        filterProfiles[ config.filterOption ].intervalMenuOption;
+    config.intervalMenuOption = profileConf.profiles[
+				commonConfig.profileOption ].filterProfiles[
+				commonConfig.filterOption ].intervalMenuOption;
   }
   configure();
-  statusLine->showMessage ( state.camera->name() + tr ( " connected" ), 5000 );
+  statusLine->showMessage ( commonState.camera->name() +
+			tr ( " connected" ), 5000 );
   state.cameraWidget->clearTemperature();
   clearDroppedFrames();
   state.captureWidget->enableStartButton ( 1 );
@@ -1542,16 +1614,17 @@ MainWindow::connectCamera ( int deviceIndex )
   // FIX ME -- should these happen in the "configure" functions for each
   // widget?
   state.previewWidget->setVideoFramePixelFormat (
-      state.camera->videoFramePixelFormat());
-  state.cameraWidget->enableBinningControl ( state.camera->hasBinning ( 2 ));
-  v = state.camera->hasControl ( OA_CAM_CTRL_TEMPERATURE );
+      commonState.camera->videoFramePixelFormat());
+  state.cameraWidget->enableBinningControl (
+			commonState.camera->hasBinning ( 2 ));
+  v = commonState.camera->hasControl ( OA_CAM_CTRL_TEMPERATURE );
   state.previewWidget->enableTempDisplay ( v );
   // styleStatusBarTemp ( v );
-  v = state.camera->hasControl ( OA_CAM_CTRL_DROPPED );
+  v = commonState.camera->hasControl ( OA_CAM_CTRL_DROPPED );
   state.previewWidget->enableDroppedDisplay ( v );
   styleStatusBarDroppedFrames ( v );
   if ( state.settingsWidget ) {
-    state.settingsWidget->enableTab ( state.cameraSettingsIndex, 1 );
+    state.settingsWidget->enableTab ( commonState.cameraSettingsIndex, 1 );
   }
   cameraOpt->setEnabled ( 1 );
 
@@ -1560,31 +1633,37 @@ MainWindow::connectCamera ( int deviceIndex )
 
   // start regardless of whether we're displaying or capturing the
   // data
-  state.camera->start();
-  state.controlWidget->disableAutoControls();
+  commonState.camera->startStreaming ( &PreviewWidget::updatePreview,
+			&commonState );
+	if ( !commonState.camera->hasReadableControls()) {
+		state.controlWidget->disableAutoControls();
+	}
   state.histogramOn = oldHistogramState;
   oldHistogramState = -1;
 
-  format = state.camera->videoFramePixelFormat();
+  format = commonState.camera->videoFramePixelFormat();
   state.captureWidget->enableTIFFCapture (
       ( !oaFrameFormats[ format ].rawColour ||
-      ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   state.captureWidget->enablePNGCapture (
       ( !oaFrameFormats[ format ].rawColour  ||
-      ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   state.captureWidget->enableMOVCapture (( QUICKTIME_OK( format ) || 
-      ( oaFrameFormats[ format ].rawColour && config.demosaic &&
-      config.demosaicOutput )) ? 1 : 0 );
+      ( oaFrameFormats[ format ].rawColour && commonConfig.demosaic &&
+      demosaicConf.demosaicOutput )) ? 1 : 0 );
+  state.captureWidget->enableNamedPipeCapture (
+      ( !oaFrameFormats[ format ].rawColour ||
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
 }
 
 
 void
 MainWindow::disconnectCamera ( void )
 {
-  state.cameraTempValid = 0;
-  state.binningValid = 0;
+  commonState.cameraTempValid = 0;
+  commonState.binningValid = 0;
   if ( state.settingsWidget ) {
-    state.settingsWidget->enableTab ( state.cameraSettingsIndex, 0 );
+    state.settingsWidget->enableTab ( commonState.cameraSettingsIndex, 0 );
   }
   cameraOpt->setEnabled ( 0 );
   oldHistogramState = state.histogramOn;
@@ -1598,16 +1677,25 @@ MainWindow::disconnectCamera ( void )
 
 
 void
+MainWindow::resetCamera ( void )
+{
+  state.controlWidget->resetCamera();
+  statusLine->showMessage ( tr ( "Camera reset" ), 5000 );
+}
+
+
+void
 MainWindow::doDisconnectCam ( void )
 {
-  if ( state.camera && state.camera->isInitialised()) {
+  if ( commonState.camera && commonState.camera->isInitialised()) {
     if ( state.captureWidget ) {
       state.captureWidget->closeOutputHandler();
     }
-    state.camera->stop();
-    state.camera->disconnect();
+    commonState.camera->stop();
+    commonState.camera->disconnect();
     disconnectCam->setEnabled( 0 );
     rescanCam->setEnabled( 1 );
+    resetCam->setEnabled( 0 );
   }
 }
 
@@ -1625,15 +1713,15 @@ MainWindow::connectFilterWheel ( int deviceIndex )
   int position = 0;
 
   doDisconnectFilterWheel();
-  if ( state.filterWheel->initialise ( filterWheelDevs[ deviceIndex ] )) {
+  if ( commonState.filterWheel->initialise ( filterWheelDevs[ deviceIndex ] )) {
     QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
         tr ( "Unable to connect filter wheel" ));
     return;
   }
 
   disconnectWheel->setEnabled( 1 );
-  warmResetWheel->setEnabled( state.filterWheel->hasWarmReset());
-  coldResetWheel->setEnabled( state.filterWheel->hasColdReset());
+  warmResetWheel->setEnabled( commonState.filterWheel->hasWarmReset());
+  coldResetWheel->setEnabled( commonState.filterWheel->hasColdReset());
   rescanWheel->setEnabled( 0 );
   if ( !wheelStatus ) {
     wheelStatus = new QLabel();
@@ -1643,13 +1731,13 @@ MainWindow::connectFilterWheel ( int deviceIndex )
   statusLine->insertPermanentWidget( position, wheelStatus );
   // statusLine->addWidget ( wheelStatus );
   wheelStatus->show();
-  statusLine->showMessage ( state.filterWheel->name() +
+  statusLine->showMessage ( commonState.filterWheel->name() +
       tr ( " connected" ), 5000 );
-  if ( state.filterWheel->hasSpeedControl()) {
+  if ( commonState.filterWheel->hasSpeedControl()) {
     unsigned int speed;
-    state.filterWheel->getSpeed ( &speed );
+    commonState.filterWheel->getSpeed ( &speed );
     if ( !speed ) {
-      state.filterWheel->setSpeed ( 100, 0 );
+      commonState.filterWheel->setSpeed ( 100, 0 );
     }
   }
 
@@ -1671,8 +1759,8 @@ MainWindow::disconnectFilterWheel ( void )
 void
 MainWindow::warmResetFilterWheel ( void )
 {
-  if ( state.filterWheel && state.filterWheel->isInitialised()) {
-    state.filterWheel->warmReset();
+  if ( commonState.filterWheel && commonState.filterWheel->isInitialised()) {
+    commonState.filterWheel->warmReset();
   }
   statusLine->showMessage ( tr ( "Filter wheel reset" ), 5000 );
 }
@@ -1681,8 +1769,8 @@ MainWindow::warmResetFilterWheel ( void )
 void
 MainWindow::coldResetFilterWheel ( void )
 {
-  if ( state.filterWheel && state.filterWheel->isInitialised()) {
-    state.filterWheel->coldReset();
+  if ( commonState.filterWheel && commonState.filterWheel->isInitialised()) {
+    commonState.filterWheel->coldReset();
   }
   statusLine->showMessage ( tr ( "Filter wheel reset" ), 5000 );
 }
@@ -1698,8 +1786,8 @@ MainWindow::rescanFilterWheels ( void )
 void
 MainWindow::doDisconnectFilterWheel ( void )
 {
-  if ( state.filterWheel && state.filterWheel->isInitialised()) {
-    state.filterWheel->disconnect();
+  if ( commonState.filterWheel && commonState.filterWheel->isInitialised()) {
+    commonState.filterWheel->disconnect();
     disconnectWheel->setEnabled( 0 );
     warmResetWheel->setEnabled( 0 );
     coldResetWheel->setEnabled( 0 );
@@ -1714,17 +1802,17 @@ MainWindow::connectTimer ( int deviceIndex )
   int position = 0;
 
   doDisconnectTimer();
-  if ( state.timer->initialise ( timerDevs[ deviceIndex ] )) {
+  if ( commonState.timer->initialise ( timerDevs[ deviceIndex ] )) {
     QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
         tr ( "Unable to connect timer" ));
     return;
   }
 
   disconnectTimerDevice->setEnabled( 1 );
-  resetTimerDevice->setEnabled( state.timer->hasReset());
+  resetTimerDevice->setEnabled( commonState.timer->hasReset());
   rescanTimer->setEnabled( 0 );
 
-  if ( state.filterWheel && state.filterWheel->isInitialised()) {
+  if ( commonState.filterWheel && commonState.filterWheel->isInitialised()) {
     position++;
   }
   if ( !timerStatus ) {
@@ -1734,25 +1822,27 @@ MainWindow::connectTimer ( int deviceIndex )
     statusLine->insertPermanentWidget( position, timerStatus );
   }
   timerStatus->show();
-  if ( state.timer->hasGPS()) {
+  if ( commonState.timer->hasGPS()) {
     if ( !locationLabel ) {
       locationLabel = new QLabel;
       statusLine->insertPermanentWidget( position + 1, locationLabel );
     }
-    if ( state.timer->readGPS ( &state.latitude, &state.longitude,
-        &state.altitude ) == OA_ERR_NONE ) {
-      state.gpsValid = 1;
+    if ( commonState.timer->readGPS ( &commonState.latitude,
+				&commonState.longitude, &commonState.altitude, 1 ) == OA_ERR_NONE ) {
+      commonState.gpsValid = 1;
       setLocation();
     }
   }
-  statusLine->showMessage ( state.timer->name() + tr ( " connected" ), 5000 );
+  statusLine->showMessage ( commonState.timer->name() +
+			tr ( " connected" ), 5000 );
+	timerConf.externalLEDEnabled = getTimerExternalLEDState();
 }
 
 
 void
 MainWindow::disconnectTimer ( void )
 {
-  state.gpsValid = 0;
+  commonState.gpsValid = 0;
   doDisconnectTimer();
   statusLine->removeWidget ( locationLabel );
   statusLine->removeWidget ( timerStatus );
@@ -1763,8 +1853,8 @@ MainWindow::disconnectTimer ( void )
 void
 MainWindow::resetTimer ( void )
 {
-  if ( state.timer && state.timer->isInitialised()) {
-    state.timer->reset();
+  if ( commonState.timer && commonState.timer->isInitialised()) {
+    commonState.timer->reset();
   }
   statusLine->showMessage ( tr ( "Timer reset" ), 5000 );
 }
@@ -1780,8 +1870,8 @@ MainWindow::rescanTimers ( void )
 void
 MainWindow::doDisconnectTimer ( void )
 {
-  if ( state.timer && state.timer->isInitialised()) {
-    state.timer->disconnect();
+  if ( commonState.timer && commonState.timer->isInitialised()) {
+    commonState.timer->disconnect();
     disconnectTimerDevice->setEnabled( 0 );
     resetTimerDevice->setEnabled( 0 );
     rescanTimer->setEnabled( 1 );
@@ -1805,7 +1895,7 @@ MainWindow::setDroppedFrames()
   uint64_t dropped;
   QString stringVal;
 
-  dropped = state.camera->readControl ( OA_CAM_CTRL_DROPPED );
+  dropped = commonState.camera->readControl ( OA_CAM_CTRL_DROPPED );
   stringVal.setNum ( dropped );
   droppedValue->setText ( stringVal );
 }
@@ -1823,7 +1913,7 @@ MainWindow::quit ( void )
   doingQuit = 1;
   doDisconnectCam();
   doDisconnectFilterWheel();
-  writeConfig();
+  writeConfig ( userConfigFile );
   qApp->quit();
 }
 
@@ -1859,8 +1949,8 @@ MainWindow::enableNightMode ( void )
 void
 MainWindow::enableColouriseMode ( void )
 {
-  config.colourise = colourise->isChecked() ? 1 : 0;
-  SET_PROFILE_CONFIG( colourise, config.colourise );
+  commonConfig.colourise = colourise->isChecked() ? 1 : 0;
+  SET_PROFILE_CONFIG( colourise, commonConfig.colourise );
 }
 
 
@@ -1869,15 +1959,20 @@ MainWindow::enableHistogram ( void )
 {
   if ( histogramOpt->isChecked()) {
     if ( !state.histogramWidget ) {
-      state.histogramWidget = new HistogramWidget();
+      state.histogramWidget = new HistogramWidget ( APPLICATION_NAME );
       // need to do this to be able to uncheck the menu item on closing
       state.histogramWidget->setAttribute ( Qt::WA_DeleteOnClose );
-      if ( config.histogramOnTop ) {
+      if ( histogramConf.histogramOnTop ) {
         state.histogramWidget->setWindowFlags ( Qt::WindowStaysOnTopHint );
       }
       connect ( state.histogramWidget, SIGNAL( destroyed ( QObject* )), this,
           SLOT ( histogramClosed()));
     }
+		if ( state.previewWidget && !state.histogramSignalConnected ) {
+			connect ( state.previewWidget, SIGNAL( updateHistogram ( void )),
+					state.histogramWidget, SLOT( update ( void )));
+			state.histogramSignalConnected = 1;
+		}
     state.histogramWidget->show();
     state.histogramOn = 1;
     config.showHistogram = 1;
@@ -1895,7 +1990,14 @@ MainWindow::enableHistogram ( void )
 void
 MainWindow::histogramClosed ( void )
 {
-  state.histogramWidget = 0;
+	if ( state.histogramSignalConnected ) {
+		/*
+		disconnect ( state.previewWidget, SIGNAL( updateHistogram ( void )),
+				state.histogramWidget, SLOT( update()));
+		*/
+		state.histogramSignalConnected = 0;
+	}
+  state.histogramWidget = nullptr;
   state.histogramOn = 0;
   if ( !doingQuit ) {
     histogramOpt->setChecked ( 0 );
@@ -1972,10 +2074,10 @@ MainWindow::enableFlipX ( void )
   int flipState = flipX->isChecked() ? 1 : 0;
 
   config.flipX = flipState;
-  if ( state.camera->isInitialised() &&
-      state.camera->hasControl ( OA_CAM_CTRL_HFLIP )) {
-    state.camera->setControl ( OA_CAM_CTRL_HFLIP, flipState );
-    config.CONTROL_VALUE( OA_CAM_CTRL_HFLIP ) = flipState;
+  if ( commonState.camera->isInitialised() &&
+      commonState.camera->hasControl ( OA_CAM_CTRL_HFLIP )) {
+    commonState.camera->setControl ( OA_CAM_CTRL_HFLIP, flipState );
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_HFLIP ) = flipState;
     SET_PROFILE_CONTROL( OA_CAM_CTRL_HFLIP, flipState );
     if ( state.settingsWidget ) {
       state.settingsWidget->enableFlipX ( flipState );
@@ -1995,10 +2097,10 @@ MainWindow::enableFlipY ( void )
   int flipState = flipY->isChecked() ? 1 : 0;
 
   config.flipY = flipState;
-  if ( state.camera->isInitialised() &&
-      state.camera->hasControl ( OA_CAM_CTRL_VFLIP )) {
-    state.camera->setControl ( OA_CAM_CTRL_VFLIP, flipState );
-    config.CONTROL_VALUE( OA_CAM_CTRL_VFLIP ) = flipState;
+  if ( commonState.camera->isInitialised() &&
+      commonState.camera->hasControl ( OA_CAM_CTRL_VFLIP )) {
+    commonState.camera->setControl ( OA_CAM_CTRL_VFLIP, flipState );
+    cameraConf.CONTROL_VALUE( OA_CAM_CTRL_VFLIP ) = flipState;
     SET_PROFILE_CONTROL( OA_CAM_CTRL_VFLIP, flipState );
     if ( state.settingsWidget ) {
       state.settingsWidget->enableFlipY ( flipState );
@@ -2015,7 +2117,7 @@ MainWindow::enableFlipY ( void )
 void
 MainWindow::mosaicFlipWarning ( void )
 {
-  int format = state.camera->videoFramePixelFormat();
+  int format = commonState.camera->videoFramePixelFormat();
 
   if ( oaFrameFormats[ format ].rawColour ) {
     QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
@@ -2031,19 +2133,22 @@ MainWindow::enableDemosaic ( void )
   int demosaicState = demosaicOpt->isChecked() ? 1 : 0;
   int format;
 
-  config.demosaic = demosaicState;
+  commonConfig.demosaic = demosaicState;
   state.previewWidget->enableDemosaic ( demosaicState );
-  if ( state.camera->isInitialised()) {
-    format = state.camera->videoFramePixelFormat();
+  if ( commonState.camera->isInitialised()) {
+    format = commonState.camera->videoFramePixelFormat();
     state.captureWidget->enableTIFFCapture (
         ( !oaFrameFormats[ format ].rawColour ||
-        ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+        ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
     state.captureWidget->enablePNGCapture (
         ( !oaFrameFormats[ format ].rawColour ||
-        ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+        ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
     state.captureWidget->enableMOVCapture (( QUICKTIME_OK( format ) || 
-        ( oaFrameFormats[ format ].rawColour && config.demosaic &&
-        config.demosaicOutput )) ? 1 : 0 );
+        ( oaFrameFormats[ format ].rawColour && commonConfig.demosaic &&
+        demosaicConf.demosaicOutput )) ? 1 : 0 );
+    state.captureWidget->enableNamedPipeCapture (
+        ( !oaFrameFormats[ format ].rawColour ||
+        ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   }
 }
 
@@ -2083,7 +2188,7 @@ void
 MainWindow::doGeneralSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.generalSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.generalSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2092,7 +2197,7 @@ void
 MainWindow::doCaptureSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.captureSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.captureSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2101,7 +2206,7 @@ void
 MainWindow::doCameraSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.cameraSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.cameraSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2110,7 +2215,7 @@ void
 MainWindow::doProfileSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.profileSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.profileSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2119,7 +2224,7 @@ void
 MainWindow::doFilterSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.filterSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.filterSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2128,7 +2233,7 @@ void
 MainWindow::doAutorunSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.autorunSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.autorunSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2137,7 +2242,7 @@ void
 MainWindow::doHistogramSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.histogramSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.histogramSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2146,7 +2251,7 @@ void
 MainWindow::doDemosaicSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.demosaicSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.demosaicSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2155,7 +2260,7 @@ void
 MainWindow::doFITSSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.fitsSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.fitsSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2164,7 +2269,7 @@ void
 MainWindow::doTimerSettings ( void )
 {
   createSettingsWidget();
-  state.settingsWidget->setActiveTab ( state.timerSettingsIndex );
+  state.settingsWidget->setActiveTab ( commonState.timerSettingsIndex );
   state.settingsWidget->show();
 }
 
@@ -2173,11 +2278,12 @@ void
 MainWindow::createSettingsWidget ( void )
 {
   if ( !state.settingsWidget ) {
-    state.settingsWidget = new SettingsWidget();
+    state.settingsWidget = new SettingsWidget ( this, TOP_WIDGET,
+				APPLICATION_NAME, OACAPTURE_SETTINGS, 1, 1, &trampolines );
     state.settingsWidget->setWindowFlags ( Qt::WindowStaysOnTopHint );
     state.settingsWidget->setAttribute ( Qt::WA_DeleteOnClose );
-    state.settingsWidget->enableTab ( state.cameraSettingsIndex,
-        state.camera->isInitialised() ? 1 : 0 );
+    state.settingsWidget->enableTab ( commonState.cameraSettingsIndex,
+        commonState.camera->isInitialised() ? 1 : 0 );
     connect ( state.settingsWidget, SIGNAL( destroyed ( QObject* )), this,
         SLOT ( settingsClosed()));
   }
@@ -2187,7 +2293,7 @@ MainWindow::createSettingsWidget ( void )
 void
 MainWindow::settingsClosed ( void )
 {
-  state.settingsWidget = 0;
+  state.settingsWidget = nullptr;
 }
 
 
@@ -2208,7 +2314,11 @@ MainWindow::doCameraMenu ( int replaceSingleItem )
     delete cameraSignalMapper;
   }
 
-  numDevs = state.camera->listConnected ( &cameraDevs );
+  if ( cameraDevs ) {
+    commonState.camera->releaseInfo ( cameraDevs );
+  }
+  numDevs = commonState.camera->listConnected ( &cameraDevs,
+			OA_CAM_FEATURE_STREAMING );
 
   if ( !replaceSingleItem ) {
     if ( numDevs > 0 ) {
@@ -2234,13 +2344,19 @@ MainWindow::doCameraMenu ( int replaceSingleItem )
 
     if ( !cameraMenuCreated ) {
       cameraMenuSeparator = cameraMenu->addSeparator();
+			resetCam = new QAction ( tr ( "Reset" ), this );
+			resetCam->setStatusTip ( tr ( "Reset camera controls" ));
+      connect ( resetCam, SIGNAL( triggered()), this,
+          SLOT( resetCamera()));
       rescanCam = new QAction ( tr ( "Rescan" ), this );
       rescanCam->setStatusTip ( tr ( "Scan for newly connected devices" ));
       connect ( rescanCam, SIGNAL( triggered()), this, SLOT( rescanCameras() ));
       disconnectCam = new QAction ( tr ( "Disconnect" ), this );
       connect ( disconnectCam, SIGNAL( triggered()), this,
           SLOT( disconnectCamera()));
+      resetCam->setEnabled( 0 );
       disconnectCam->setEnabled( 0 );
+      cameraMenu->addAction ( resetCam );
       cameraMenu->addAction ( rescanCam );
       cameraMenu->addAction ( disconnectCam );
     }
@@ -2283,7 +2399,10 @@ MainWindow::doFilterWheelMenu ( int replaceSingleItem )
     delete filterWheelSignalMapper;
   }
 
-  numFilterWheels = state.filterWheel->listConnected ( &filterWheelDevs );
+  if ( filterWheelDevs ) {
+    commonState.filterWheel->releaseInfo ( filterWheelDevs );
+  }
+  numFilterWheels = commonState.filterWheel->listConnected ( &filterWheelDevs );
 
   if ( !replaceSingleItem ) {
     if ( numFilterWheels > 0 ) {
@@ -2375,7 +2494,10 @@ MainWindow::doTimerMenu ( int replaceSingleItem )
     delete timerSignalMapper;
   }
 
-  numTimers = state.timer->listConnected ( &timerDevs );
+  if ( timerDevs ) {
+    commonState.timer->releaseInfo ( timerDevs );
+  }
+  numTimers = commonState.timer->listConnected ( &timerDevs );
 
   if ( !replaceSingleItem ) {
     if ( numTimers > 0 ) {
@@ -2446,7 +2568,7 @@ MainWindow::closeSettingsWindow ( void )
 {
   if ( state.settingsWidget ) {
     state.settingsWidget->close();
-    state.settingsWidget = 0;
+    state.settingsWidget = nullptr;
   }
 }
 
@@ -2505,6 +2627,7 @@ MainWindow::createPreviewWindow()
   state.focusOverlay = focusOverlay;
   previewWidget = new PreviewWidget ( previewScroller );
   state.previewWidget = previewWidget;
+  commonState.viewerWidget = ( QWidget* ) previewWidget;
 
   // These figures are a bit arbitrary, but give a size that should work
   // initially on small displays
@@ -2513,12 +2636,17 @@ MainWindow::createPreviewWindow()
   height = rec.height();
   width = rec.width();
   if ( height < 1024 || width < 1280 ) {
-    if ( height < 600 || width < 800 ) {
-      minWidth = 640;
-      minHeight = 480;
+    if ( height <= 600 || width <= 800 ) {
+      minWidth = 560;
+      minHeight = 420;
     } else {
-      minWidth = 800;
-      minHeight = 600;
+      if ( height <= 800 || width <= 1000 ) {
+        minWidth = 700;
+        minHeight = 560;
+      } else {
+        minWidth = 900;
+        minHeight = 720;
+      }
     }
   } else {
     height *= 2.0/3.0;
@@ -2541,10 +2669,10 @@ MainWindow::createPreviewWindow()
     previewScroller->hide();
   }
 
-  if ( config.dockableControls || config.separateControls ) {
+  if ( generalConf.dockableControls || generalConf.separateControls ) {
     setCentralWidget ( previewScroller );
   } else {
-    if ( config.controlsOnRight ) {
+    if ( generalConf.controlsOnRight ) {
       dummyWidget = new QWidget ( this );
       dummyWidget->setLayout ( vertControlsBox );
       splitter->addWidget ( previewScroller );
@@ -2558,7 +2686,13 @@ MainWindow::createPreviewWindow()
     }
   }
 
-  state.previewWidget->setDisplayFPS ( config.displayFPS );
+  state.previewWidget->setDisplayFPS ( generalConf.displayFPS );
+
+	if ( state.histogramWidget ) {
+		connect ( state.previewWidget, SIGNAL( updateHistogram ( void )),
+				state.histogramWidget, SLOT( update ( void )));
+		state.histogramSignalConnected = 1;
+	}
 }
 
 
@@ -2607,7 +2741,7 @@ MainWindow::createControlWidgets ( void )
   imageZoomBox->addWidget ( imageWidget );
   imageZoomBox->addWidget ( zoomWidget );
 
-  if ( config.dockableControls && !config.separateControls ) {
+  if ( generalConf.dockableControls && !generalConf.separateControls ) {
     cameraDock = new QDockWidget ( tr ( "Camera" ), this );
     cameraDock->setFeatures ( QDockWidget::DockWidgetMovable |
         QDockWidget::DockWidgetFloatable );
@@ -2634,7 +2768,7 @@ MainWindow::createControlWidgets ( void )
     captureDock->setWidget ( captureWidget );
     captureWidget->show();
 
-    enum Qt::DockWidgetArea where = config.controlsOnRight ?
+    enum Qt::DockWidgetArea where = generalConf.controlsOnRight ?
         Qt::RightDockWidgetArea : Qt::TopDockWidgetArea;
     addDockWidget ( where, cameraDock );
     addDockWidget ( where, imageZoomDock );
@@ -2646,7 +2780,7 @@ MainWindow::createControlWidgets ( void )
     // we can't set a MainWindow layout directly, so we need to add a
     // new widget as the central widget and add the layout to that
 
-    if ( config.separateControls ) {
+    if ( generalConf.separateControls ) {
 
       controlWindow = new QMainWindow;
       dummyWidget = new QWidget ( controlWindow );
@@ -2668,7 +2802,7 @@ MainWindow::createControlWidgets ( void )
       splitter = new QSplitter ( this );
       setCentralWidget ( splitter );
 
-      if ( config.controlsOnRight ) {
+      if ( generalConf.controlsOnRight ) {
         vertControlsBox = new QVBoxLayout();
         vertControlsBox->addWidget ( cameraWidget );
         vertControlsBox->addLayout ( imageZoomBox );
@@ -2707,7 +2841,7 @@ MainWindow::doAdvancedMenu( void )
       }
     }
     delete advancedFilterWheelSignalMapper;
-    advancedFilterWheelSignalMapper = 0;
+    advancedFilterWheelSignalMapper = nullptr;
   }
 
   advancedActions.clear();
@@ -2748,8 +2882,8 @@ void
 MainWindow::advancedFilterWheelHandler ( int interfaceType )
 {
   if ( !state.advancedSettings ) {
-    state.advancedSettings = new AdvancedSettings ( OA_DEVICE_FILTERWHEEL,
-        interfaceType );
+    state.advancedSettings = new AdvancedSettings ( this,
+				OA_DEVICE_FILTERWHEEL, interfaceType, &trampolines );
     state.advancedSettings->setAttribute ( Qt::WA_DeleteOnClose );
     connect ( state.advancedSettings, SIGNAL( destroyed ( QObject* )), this,
         SLOT ( advancedClosed()));
@@ -2763,7 +2897,8 @@ void
 MainWindow::advancedPTRHandler ( void )
 {
   if ( !state.advancedSettings ) {
-    state.advancedSettings = new AdvancedSettings ( OA_DEVICE_PTR, 0 );
+    state.advancedSettings = new AdvancedSettings ( this, OA_DEVICE_PTR, 0,
+				&trampolines );
     state.advancedSettings->setAttribute ( Qt::WA_DeleteOnClose );
     connect ( state.advancedSettings, SIGNAL( destroyed ( QObject* )), this,
         SLOT ( advancedClosed()));
@@ -2776,7 +2911,7 @@ MainWindow::advancedPTRHandler ( void )
 void
 MainWindow::advancedClosed ( void )
 {
-  state.advancedSettings = 0;
+  state.advancedSettings = nullptr;
 }
 
 
@@ -2785,7 +2920,7 @@ MainWindow::closeAdvancedWindow ( void )
 {
   if ( state.advancedSettings ) {
     state.advancedSettings->close();
-    state.advancedSettings = 0;
+    state.advancedSettings = nullptr;
   }
 }
 
@@ -2840,8 +2975,78 @@ MainWindow::frameWriteFailedPopup ( void )
 void
 MainWindow::setLocation ( void )
 {
-  QString locationText = QString ( "%1N  %2E, %3m" ).arg (
-      state.latitude, 0, 'f', 4 ).arg ( state.longitude, 0, 'f', 4 ).arg (
-      state.altitude, 0, 'f', 0 );
+  QString locationText = QString ( "%1%2  %3%4, %5m" ).
+		  arg ( fabs ( commonState.latitude ), 0, 'f', 4 ).
+			arg ( commonState.latitude < 0 ? 'S' : 'N' ).
+			arg ( fabs ( commonState.longitude ), 0, 'f', 4 ).
+			arg ( commonState.longitude < 0 ? 'W' : 'E' ).
+			arg ( commonState.altitude, 0, 'f', 0 );
   locationLabel->setText ( locationText );
+}
+
+
+void
+MainWindow::updateConfig ( void )
+{
+  writeConfig ( userConfigFile );
+}
+
+
+void
+MainWindow::promptForFilterChange ( int newFilterNum )
+{
+	QMessageBox* changeFilter = new QMessageBox ( QMessageBox::NoIcon,
+		APPLICATION_NAME, tr ( "Change to next filter: " ) +
+		filterConf.filters[ newFilterNum ].filterName, QMessageBox::Ok,
+		TOP_WIDGET );
+	changeFilter->exec();
+	delete changeFilter;
+}
+
+
+void
+MainWindow::outputUnwritable ( void )
+{
+	QMessageBox::warning ( TOP_WIDGET, tr ( "Start Recording" ),
+			tr ( "Output is not writable" ));
+}
+
+
+int
+MainWindow::outputExists ( void )
+{
+	return QMessageBox::question ( TOP_WIDGET, tr ( "Start Recording" ),
+			tr ( "Output file exists.  OK to overwrite?" ), QMessageBox::No |
+			QMessageBox::Yes, QMessageBox::No );
+}
+
+
+void
+MainWindow::outputExistsUnwritable ( void )
+{
+	QMessageBox::warning ( TOP_WIDGET, tr ( "Start Recording" ),
+			tr ( "Output file exists and is not writable" ));
+}
+
+
+void
+MainWindow::createFileFailed ( void )
+{
+	QMessageBox::warning ( TOP_WIDGET, APPLICATION_NAME,
+			tr ( "Unable to create file for output" ));
+}
+
+
+void
+MainWindow::enableTimerExternalLED ( int state )
+{
+	timerConf.externalLEDEnabled = state;
+	commonState.timer->setControl ( OA_TIMER_CTRL_EXT_LED_ENABLE, state );
+}
+
+
+int
+MainWindow::getTimerExternalLEDState ( void )
+{
+	return commonState.timer->readControl ( OA_TIMER_CTRL_EXT_LED_ENABLE );
 }

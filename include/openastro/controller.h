@@ -2,7 +2,8 @@
  *
  * controller.h -- common definitions for device controller queues
  *
- * Copyright 2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -32,6 +33,7 @@ typedef struct {
   unsigned int          completed;
   unsigned int          controlId;
   int                   resultCode;
+  void*                 commandArgs;
   void*                 commandData;
   void*                 resultData;
   void*                 callback;
@@ -42,6 +44,7 @@ typedef struct {
   void*                 callback;
   void*                 callbackArg;
   void*                 buffer;
+  void*                 metadata;
   int                   bufferLen;
 } CALLBACK;
 
@@ -60,6 +63,11 @@ typedef struct {
 #define OA_CMD_ROI_GET                  0x0c
 #define OA_CMD_DATA_GET			0x0d
 #define OA_CMD_GPS_GET			0x0e
+#define OA_CMD_GPS_CACHE_GET		0x0f
+#define OA_CMD_START_EXPOSURE						0x10
+#define OA_CMD_START_STREAMING          0x11
+#define OA_CMD_STOP_STREAMING						0x12
+#define OA_CMD_ABORT_EXPOSURE						0x13
 
 #define OA_CALLBACK_NEW_FRAME           0x01
 

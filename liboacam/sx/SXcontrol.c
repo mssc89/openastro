@@ -2,7 +2,8 @@
  *
  * SXcontrol.c -- control functions for SX cameras
  *
- * Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -151,16 +152,12 @@ oaSXCameraTestControl ( oaCamera* camera, int control, oaControlValue* val )
       return OA_ERR_NONE;
       break;
 
-    case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
-      if ( val->int32 != OA_EXPOSURE_AUTO && val->int32 !=
-          OA_EXPOSURE_MANUAL ) {
-        return -OA_ERR_OUT_OF_RANGE;
-      }
-      return OA_ERR_NONE;
-      break;     
-
     case OA_CAM_CTRL_BINNING:
-      return -OA_ERR_INVALID_CONTROL;
+			if ( val->discrete == OA_BIN_MODE_NONE ||
+					val->discrete == OA_BIN_MODE_2x2 ) {
+				return OA_ERR_NONE;
+			}
+      return -OA_ERR_OUT_OF_RANGE;
       break;
 
     default:
@@ -206,7 +203,7 @@ oaSXCameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaSXCameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND    command;
   CALLBACK      callbackData;
@@ -219,7 +216,7 @@ oaSXCameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -255,7 +252,7 @@ oaSXCameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "SX: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

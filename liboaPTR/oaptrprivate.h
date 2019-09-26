@@ -2,7 +2,8 @@
  *
  * oaptrprivate.h -- shared declarations not exposed to the cruel world
  *
- * Copyright 2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -59,10 +60,12 @@ typedef struct {
   double		longitude;
   double		latitude;
   double		altitude;
+	int				validGPS;
   // timer configuration
   int32_t		requestedCount;
   int32_t		requestedInterval;
   int32_t		requestedMode;
+	int8_t		externalLEDState;
   // thread management
   pthread_t             controllerThread;
   pthread_mutex_t       commandQueueMutex;
@@ -100,5 +103,6 @@ extern void		_oaFreePTRDeviceList ( PTR_LIST* );
 
 #define PTR_TIMESTAMP_BUFFER_LEN_V1_0 28
 #define PTR_TIMESTAMP_BUFFER_LEN_V1_1 32
+#define PTR_TIMESTAMP_BUFFER_LEN_V2   64
 
 #endif /* OA_PTR_PRIVATE_H */

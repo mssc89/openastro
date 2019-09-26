@@ -2,7 +2,8 @@
  *
  * QHYoacam.h -- header for QHY camera API
  *
- * Copyright 2013,2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2017,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -27,7 +28,7 @@
 #ifndef OA_QHY_OACAM_H
 #define OA_QHY_OACAM_H
 
-extern int		oaQHYGetCameras ( CAMERA_LIST*, int );
+extern int		oaQHYGetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaQHYInitCamera ( oaCameraDevice* );
 extern int              oaQHYCloseCamera ( oaCamera* );
 
@@ -40,7 +41,7 @@ extern int		oaQHYCameraGetControlRange ( oaCamera*, int, int64_t*,
 
 extern int		oaQHYCameraSetResolution ( oaCamera*, int, int );
 extern int		oaQHYCameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int		oaQHYCameraIsStreaming ( oaCamera* );
 extern int		oaQHYCameraStopStreaming ( oaCamera* );
 

@@ -2,7 +2,7 @@
  *
  * viewWidget.h -- class declaration
  *
- * Copyright 2015,2016,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +28,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtGui>
@@ -52,10 +52,11 @@ class ViewWidget : public QFrame
     void		enableTempDisplay ( int );
     void		enableFlipX ( int );
     void		enableFlipY ( int );
-    static void*	addImage ( void*, void*, int );
+    static void*	addImage ( void*, void*, int, void* );
     void		restart ( void );
 
     void		updateFrameSize ( void );
+    void		zoomUpdated ( int );
     void		configure ( void );
     void		setCapturedFramesDisplayInterval ( int );
     void		setEnabled ( int );
@@ -65,10 +66,18 @@ class ViewWidget : public QFrame
     void		setFirstFrameTime ( void );
     void		beginRecording ( void );
     void		forceRecordingStop ( void );
+		void		setBlackLevel ( int );
+		void		setWhiteLevel ( int );
+		void		setBrightness ( int );
+		void		setContrast ( int );
+		void		setSaturation ( int );
+		void		setGamma ( int );
+		int			getStackedFrames ( void );
 
   public slots:
     void		recentreReticle ( void );
     void		derotateReticle ( void );
+		void		redrawImage ( void );
     void		setMonoPalette ( QColor );
 
   protected:
@@ -82,9 +91,22 @@ class ViewWidget : public QFrame
     void		updateProgress ( unsigned int );
     void		updateHistogram ( void );
     void		updateDisplay ( void );
+    void		updateBatteryLevel ( void );
     void		stopRecording ( void );
+    void		startNextExposure ( void );
+		void		updateStackedFrameCount ( void );
 
   private:
+		void			_recalcCoeffs ( void );
+		void			_displayCoeffs ( void );
+		int				_unpackImageFrame ( ViewWidget*, void*, int*, int*, unsigned int*,
+									unsigned int* );
+		int				_unpackJPEG8 ( ViewWidget*, void*, int*, int*, unsigned int*,
+									unsigned int* );
+		int				_unpackLibraw ( ViewWidget*, void*, int*, int*, unsigned int*,
+									unsigned int* );
+		void			_processAndDisplay ( void*, ViewWidget*, unsigned long, int );
+
     QImage		image;
     int			currentZoom;
     int			currentZoomX;
@@ -98,6 +120,8 @@ class ViewWidget : public QFrame
     long		secondForFrameCount;
     long		secondForTemperature;
     long		secondForDropped;
+    long		secondForAutoControls;
+    long		minuteForBatteryLevel;
     int			hasTemp;
     int			hasDroppedFrames;
     int			reticleCentreX;
@@ -105,6 +129,8 @@ class ViewWidget : public QFrame
     int			flipX;
     int			flipY;
     int			demosaic;
+		void*		rgbBuffer;
+		int			rgbBufferSize;
     void*		viewImageBuffer[2];
     int			viewBufferLength;
     void*		writeImageBuffer[2];
@@ -122,30 +148,53 @@ class ViewWidget : public QFrame
     QTransform		rotationTransform;
     int			setNewFirstFrameTime;
     pthread_mutex_t	imageMutex;
-    int			recordingInProgress;
-    int			manualStop;
     int			focusScore;
-    void*		stackBuffer[2];
-    int			stackBufferLength;
-    int			currentStackBuffer;
-    void*		stackBufferInUse;
-    unsigned int*	averageBuffer;
-    unsigned int	averageBufferLength;
-    unsigned int	totalFrames;
+		void**	previousFrames;
+		unsigned int	previousFrameArraySize;
+    unsigned int	nextFrame;
+		unsigned int	maxFrames;
+		unsigned int	frameLimit;
 
-    void		processFlip ( void*, int, int );
-    void		processFlip8Bit ( uint8_t*, int );
-    void		processFlip16Bit ( uint8_t*, int );
-    void		processFlip24BitColour ( uint8_t*, int );
     unsigned int	reduceTo8Bit ( void*, void*, int, int, int );
     void		mousePressEvent ( QMouseEvent* );
     void		mouseMoveEvent ( QMouseEvent* );
     void		mouseReleaseEvent ( QMouseEvent* );
     void		wheelEvent ( QWheelEvent* );
-    void		recalculateDimensions ( int );
     int			checkBuffers ( ViewWidget* );
+    void		recalculateDimensions ( int );
 
     QVector<QRgb>	greyscaleColourTable;
     QVector<QRgb>	falseColourTable;
 
+		int						blackPoint;
+		int						whitePoint;
+		int						brightness;
+		int						contrast;
+		int						saturation;
+		double				gammaExponent;
+
+		double				coeff_b;
+		double				coeff_c;
+		double				coeff_t;
+		double				coeff_s;
+		double				coeff_r;
+		double				coeff_sr;
+		double				coeff_sg;
+		double				coeff_sb;
+		double				coeff_r1;
+		double				coeff_r2;
+		double				coeff_r3;
+		double				coeff_g1;
+		double				coeff_g2;
+		double				coeff_g3;
+		double				coeff_b1;
+		double				coeff_b2;
+		double				coeff_b3;
+		double				coeff_tbr;
+
+		int						viewPixelFormat;
+		int						currentViewBuffer;
+		void*					viewBuffer;
+		void*					originalBuffer;
+		int						abortProcessing;
 };

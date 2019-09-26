@@ -2,7 +2,8 @@
  *
  * controlWidget.h -- class declaration
  *
- * Copyright 2013,2014,2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +29,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtCore>
@@ -66,6 +67,7 @@ class ControlWidget : public QGroupBox
     unsigned int	getCurrentGain ( void );
     unsigned int	getCurrentExposure ( void );
     QString		exposureIntervalString ( void );
+		void		resetCamera ( void );
 
   public slots:
     void		exposureMenuChanged ( int );
@@ -77,6 +79,7 @@ class ControlWidget : public QGroupBox
     void		updateSelectableCheckbox ( int );
     void		setSelectableControl1 ( int );
     void		setSelectableControl2 ( int );
+    void		doAutoControlUpdate ( void );
 
   private:
     QSlider*		exposureSlider;

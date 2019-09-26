@@ -97,7 +97,8 @@ struct qhycam cameraList[] =
  */
 
 int
-oaQHYGetCameras ( CAMERA_LIST* deviceList, int flags )
+oaQHYGetCameras ( CAMERA_LIST* deviceList, unsigned long featureFlags,
+		int flags )
 {
   unsigned int				numFound = 0;
   unsigned int         		 	numUSBDevices, i, j;
@@ -184,10 +185,9 @@ oaQHYGetCameras ( CAMERA_LIST* deviceList, int flags )
           return -OA_ERR_MEM_ALLOC;
         }
         if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
-          free ( dev );
+          ( void ) free (( void* ) dev );
           libusb_free_device_list ( devlist, 1 );
           libusb_exit ( ctx );
-          _oaFreeCameraDeviceList ( deviceList );
           return -OA_ERR_MEM_ALLOC;
         }
 
@@ -220,11 +220,10 @@ oaQHYGetCameras ( CAMERA_LIST* deviceList, int flags )
           }
         }
         if (( ret = _oaCheckCameraArraySize ( deviceList )) < 0 ) {
-          free ( dev );
-          free ( _private );
+          ( void ) free (( void* ) dev );
+          ( void ) free (( void* ) _private );
           libusb_free_device_list ( devlist, 1 );
           libusb_exit ( ctx );
-          _oaFreeCameraDeviceList ( deviceList );
           return ret;
         }
         deviceList->cameraList[ deviceList->numCameras++ ] = dev;

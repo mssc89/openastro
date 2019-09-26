@@ -2,7 +2,7 @@
  *
  * UVCoacam.h -- header for UVC camera API
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -29,8 +29,11 @@
 #define OA_UVC_OACAM_H
 
 #include <libuvc/libuvc.h>
+#include <openastro/camera.h>
 
-extern int		oaUVCGetCameras ( CAMERA_LIST*, int );
+#include "oacamprivate.h"
+
+extern int		oaUVCGetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaUVCInitCamera ( oaCameraDevice* );
 extern int              oaUVCCloseCamera ( oaCamera* );
 
@@ -46,7 +49,7 @@ extern int		oaUVCCameraGetControlDiscreteSet ( oaCamera*, int,
 				int32_t*, int64_t** );
 
 extern int		oaUVCCameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int              oaUVCCameraStopStreaming ( oaCamera* );
 extern int              oaUVCCameraIsStreaming ( oaCamera* );
 

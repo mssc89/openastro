@@ -2,7 +2,7 @@
  *
  * filterwheel.h -- Filter Wheel API header
  *
- * Copyright 2014 James Fidell (james@openastroproject.org)
+ * Copyright 2014, 2018 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -38,8 +38,10 @@
 
 enum oaFilterWheelInterfaceType {
   OA_FW_IF_XAGYL			= 1,
-  OA_FW_IF_SX				= 2,
-  OA_FW_IF_COUNT			= 3
+  OA_FW_IF_SX				  = 2,
+  OA_FW_IF_ZWO				= 3,
+  OA_FW_IF_BRIGHTSTAR	= 4,
+  OA_FW_IF_COUNT			= 5
 };
 
 extern oaInterface	oaFilterWheelInterfaces[ OA_FW_IF_COUNT + 1 ];
@@ -59,9 +61,6 @@ typedef struct oaFilterWheelFuncs {
   int			( *getControlRange )( struct oaFilterWheel*, int,
 				int64_t*, int64_t*, int64_t*, int64_t* );
 } oaFilterWheelFuncs;
-
-#define OA_MAX_NAME_LEN			60
-#define OA_MAX_DEVICES			32
 
 typedef struct oaFilterWheel {
   enum oaFilterWheelInterfaceType  interface;
@@ -84,6 +83,7 @@ typedef struct oaFilterWheelDevice {
 
 
 extern int		oaGetFilterWheels ( oaFilterWheelDevice*** );
+extern void		oaReleaseFilterWheels ( oaFilterWheelDevice** );
 extern unsigned		oaGetFilterWheelAPIVersion ( void );
 extern const char*	oaGetFilterWheelAPIVersionStr ( void );
 extern void		oaSetFilterWheelDebugLevel ( int );

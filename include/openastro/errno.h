@@ -2,7 +2,7 @@
  *
  * errno.h -- header for API error codes
  *
- * Copyright 2014,2015,2016 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2016,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -48,5 +48,8 @@
 #define OA_ERR_INVALID_TIMER		18
 #define OA_ERR_TIMER_RUNNING		19
 #define OA_ERR_INVALID_TIMER_MODE	20
+#define	OA_ERR_UNSUPPORTED_FORMAT	21
+#define	OA_ERR_LIBRARY_NOT_FOUND	22
+#define	OA_ERR_SYMBOL_NOT_FOUND	23
 
 #endif	/* OPENASTRO_ERRNO_H */

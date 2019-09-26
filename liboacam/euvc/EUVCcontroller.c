@@ -2,7 +2,8 @@
  *
  * EUVCcontroller.c -- Main camera controller thread
  *
- * Copyright 2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -93,10 +94,10 @@ oacamEUVCcontroller ( void* param )
           case OA_CMD_ROI_SET:
             resultCode = _processSetROI ( camera, command );
             break;
-          case OA_CMD_START:
+          case OA_CMD_START_STREAMING:
             resultCode = _processStreamingStart ( camera, command );
             break;
-          case OA_CMD_STOP:
+          case OA_CMD_STOP_STREAMING:
             resultCode = _processStreamingStop ( cameraInfo, command );
             break;
           case OA_CMD_FRAME_INTERVAL_SET:
@@ -347,16 +348,16 @@ _processSetControl ( EUVC_STATE* cameraInfo, OA_COMMAND* command )
       break;
 
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
-      cameraInfo->autoExposure = val->boolean << 1;
-      if ( euvcUsbControlMsg ( cameraInfo, USB_DIR_OUT | USB_CTRL_TYPE_CLASS |
-          USB_RECIP_INTERFACE, REQ_SET_CUR, EUVC_CT_AE_MODE_CONTROL << 8,
-          EUVC_CAM_TERMINAL << 8, ( unsigned char* ) &cameraInfo->autoExposure,
-          sizeof ( cameraInfo->autoExposure ), USB_CTRL_TIMEOUT ) !=
-          sizeof ( cameraInfo->autoExposure )) {
-        fprintf ( stderr, "set auto exposure failed\n" );
-        return -OA_ERR_SYSTEM_ERROR;
-      }
-      break;
+			cameraInfo->autoExposure = val->menu;
+			if ( euvcUsbControlMsg ( cameraInfo, USB_DIR_OUT | USB_CTRL_TYPE_CLASS |
+					USB_RECIP_INTERFACE, REQ_SET_CUR, EUVC_CT_AE_MODE_CONTROL << 8,
+					EUVC_CAM_TERMINAL << 8, ( unsigned char* )
+					&cameraInfo->autoExposure, sizeof ( cameraInfo->autoExposure ),
+					USB_CTRL_TIMEOUT ) != sizeof ( cameraInfo->autoExposure )) {
+				fprintf ( stderr, "set auto exposure failed\n" );
+				return -OA_ERR_SYSTEM_ERROR;
+			}
+			break;
 
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_WHITE_BALANCE ):
       cameraInfo->autoWhiteBalance = val->boolean;
@@ -649,6 +650,22 @@ _processGetControl ( EUVC_STATE* cameraInfo, OA_COMMAND* command )
       break;
     }
 
+    case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
+		{
+      uint8_t	val_u8;
+
+      if ( euvcUsbControlMsg ( cameraInfo, USB_DIR_OUT | USB_CTRL_TYPE_CLASS |
+          USB_RECIP_INTERFACE, REQ_GET_CUR, EUVC_CT_AE_MODE_CONTROL << 8,
+					cameraInfo->processingUnitId << 8, ( unsigned char* ) &val_u8, 1,
+					USB_CTRL_TIMEOUT ) != 1 ) {
+        fprintf ( stderr, "get auto exposure failed\n" );
+        return -OA_ERR_SYSTEM_ERROR;
+      }
+      val->valueType = OA_CTRL_TYPE_MENU;
+			val->menu = val_u8;
+      break;
+		}
+
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_WHITE_BALANCE_TEMP ):
     {
       uint8_t val_u8;
@@ -912,7 +929,7 @@ _processSetResolution ( oaCamera* camera, OA_COMMAND* command )
   }
 
   // Now reset ROI position
-  if ( camera->features.ROI ) {
+  if ( camera->features.flags & OA_CAM_FEATURE_ROI ) {
     posn = 0;
     if ( setEUVCTermControl ( cameraInfo, EUVC_CT_PARTIAL_SCAN_X,
         &posn, 4, EUVC_SET_CUR )) {
@@ -937,7 +954,7 @@ _processSetResolution ( oaCamera* camera, OA_COMMAND* command )
   _doSetFrameRate ( cameraInfo, x, y );
 
   // Set the ROI and ROI position
-  if ( camera->features.ROI ) {
+  if ( camera->features.flags & OA_CAM_FEATURE_ROI ) {
     uint8_t* p = ( uint8_t* ) &posn;
     p[0] = x & 0xff;
     p[1] = ( x >> 8 ) & 0xff;
@@ -1006,7 +1023,7 @@ _processSetROI ( oaCamera* camera, OA_COMMAND* command )
   unsigned int		x, y, frameX, frameY;
   uint32_t		posn;
 
-  if ( !camera->features.ROI ) {
+  if (!( camera->features.flags & OA_CAM_FEATURE_ROI )) {
     return -OA_ERR_INVALID_CONTROL;
   }
 

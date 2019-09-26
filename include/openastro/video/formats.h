@@ -1,8 +1,8 @@
 /*****************************************************************************
  *
- * oacam.h -- camera API (sub)header for frame formats
+ * formats.h -- camera API (sub)header for frame formats
  *
- * Copyright 2014,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2017,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -129,10 +129,30 @@
 #define OA_PIX_FMT_GRBG14_16BE          82
 #define OA_PIX_FMT_GRBG14_16LE          83
 
+#define OA_PIX_FMT_CMYG8                84
+#define OA_PIX_FMT_MCGY8                85
+#define OA_PIX_FMT_YGCM8                86
+#define OA_PIX_FMT_GYMC8                87
+#define OA_PIX_FMT_CMYG16BE             88
+#define OA_PIX_FMT_CMYG16LE             89
+#define OA_PIX_FMT_MCGY16BE             90
+#define OA_PIX_FMT_MCGY16LE             91
+#define OA_PIX_FMT_YGCM16BE             92
+#define OA_PIX_FMT_YGCM16LE             93
+#define OA_PIX_FMT_GYMC16BE             94
+#define OA_PIX_FMT_GYMC16LE             95
+
+#define	OA_PIX_FMT_JPEG8								96
+
+#define	OA_PIX_FMT_CANON_CRW						97
+#define	OA_PIX_FMT_CANON_CR2						98
+#define	OA_PIX_FMT_CANON_CR3						99
+#define	OA_PIX_FMT_NIKON_NEF						100
+
 // Adding more frame formats here requires the oaFrameFormats table
 // updating in liboavideo/formats.c
 
-#define OA_PIX_FMT_LAST_P1		OA_PIX_FMT_GRBG14_16LE+1
+#define OA_PIX_FMT_LAST_P1		OA_PIX_FMT_NIKON_NEF+1
 
 #define OA_DEMOSAIC_FMT(x) \
   ((( x == OA_PIX_FMT_BGGR8 ) || ( x == OA_PIX_FMT_RGGB8 ) || \
@@ -143,7 +163,34 @@
   ?  OA_PIX_FMT_RGB48LE : \
   (( x == OA_PIX_FMT_BGGR16BE ) || ( x == OA_PIX_FMT_RGGB16BE ) || \
   ( x == OA_PIX_FMT_GBRG16BE ) || ( x == OA_PIX_FMT_GRBG16BE )) \
-  ?  OA_PIX_FMT_RGB48BE : 0 )
+  ?  OA_PIX_FMT_RGB48BE : \
+  (( x == OA_PIX_FMT_CMYG8 ) || ( x == OA_PIX_FMT_MCGY8 ) || \
+   ( x == OA_PIX_FMT_YGCM8 ) || ( x == OA_PIX_FMT_GYMC8 )) \
+   ? OA_PIX_FMT_RGB24 : \
+  (( x == OA_PIX_FMT_CMYG16LE ) || ( x == OA_PIX_FMT_MCGY16LE ) || \
+   ( x == OA_PIX_FMT_YGCM16LE ) || ( x == OA_PIX_FMT_GYMC16LE )) \
+   ? OA_PIX_FMT_RGB48LE : \
+  (( x == OA_PIX_FMT_CMYG16BE ) || ( x == OA_PIX_FMT_MCGY16BE ) || \
+   ( x == OA_PIX_FMT_YGCM16BE ) || ( x == OA_PIX_FMT_GYMC16BE )) \
+   ? OA_PIX_FMT_RGB48BE : 0 )
+
+#define QUICKTIME_OK(f)	(( f == OA_PIX_FMT_RGB24 ) || \
+    ( f == OA_PIX_FMT_BGR24 ) || ( f == OA_PIX_FMT_GREY8 ))
+
+#define UTVIDEO_OK(f) (!(( f == OA_PIX_FMT_GREY8 ) || \
+    ( f == OA_PIX_FMT_GREY16LE ) || ( f == OA_PIX_FMT_GREY16BE ) || \
+    ( f == OA_PIX_FMT_BGGR8 ) || ( f == OA_PIX_FMT_RGGB8 ) || \
+    ( f == OA_PIX_FMT_GRBG8 ) || ( f == OA_PIX_FMT_GBRG8 ) || \
+    ( f == OA_PIX_FMT_BGGR16LE ) || ( f == OA_PIX_FMT_BGGR16BE ) || \
+    ( f == OA_PIX_FMT_RGGB16LE ) || ( f == OA_PIX_FMT_RGGB16BE ) || \
+    ( f == OA_PIX_FMT_GBRG16LE ) || ( f == OA_PIX_FMT_GBRG16BE ) || \
+    ( f == OA_PIX_FMT_GRBG16LE ) || ( f == OA_PIX_FMT_GRBG16BE ) || \
+    ( f == OA_PIX_FMT_YUYV )))
+
+#define WINDIB_OK(f) (( f == OA_PIX_FMT_GREY8 ) || \
+    ( f == OA_PIX_FMT_BGGR8 ) || ( f == OA_PIX_FMT_RGGB8 ) || \
+    ( f == OA_PIX_FMT_GRBG8 ) || ( f == OA_PIX_FMT_GBRG8 ))
+
 
 typedef struct {
   const char*	name;
@@ -154,6 +201,7 @@ typedef struct {
   unsigned int	littleEndian : 1;
   unsigned int	monochrome : 1;
   unsigned int	rawColour : 1;
+  unsigned int	useLibraw : 1;
   unsigned int	fullColour : 1;
   unsigned int	lumChrom : 1;
   unsigned int	lossless : 1;

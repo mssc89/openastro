@@ -2,7 +2,7 @@
  *
  * displayWindow.cc -- managing class for the main display area
  *
- * Copyright 2013,2014 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -48,7 +48,7 @@ DisplayWindow::DisplayWindow ( QWidget* parent ) : QWidget ( parent )
   topLeftBox = new QVBoxLayout();
   
   // ugly, but need to do this to prevent access attempts before creation
-  previewWidget = 0;
+  previewWidget = nullptr;
   cameraWidget = new CameraWidget ( this );
   imageWidget = new ImageWidget ( this );
   zoomWidget = new ZoomWidget ( this );
@@ -72,6 +72,7 @@ DisplayWindow::DisplayWindow ( QWidget* parent ) : QWidget ( parent )
   previewScroller = new QScrollArea ( this );
   previewWidget = new PreviewWidget ( previewScroller );
   state.previewWidget = previewWidget;
+  commonState.viewerWidget = ( QWidget* ) previewWidget;
   // These figures are a bit arbitrary, but give a size that should work
   // initially on small displays
   // previewScroller->setMinimumSize ( 640, 240 );

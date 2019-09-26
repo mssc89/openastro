@@ -1,7 +1,7 @@
 #
 # Makefile.am -- liboafilterwheel Makefile template
 #
-# Copyright 2014,2015,2017 James Fidell (james@openastroproject.org)
+# Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
 #
 # License:
 #
@@ -24,29 +24,38 @@
 
 AM_CPPFLAGS = \
   -I$(top_srcdir)/include \
+  -I$(top_srcdir)/ext/libEFWFilter/include \
   $(LIBHIDAPI_CFLAGS) \
-  $(LIBUSB_CFLAGS)
-
-if LIBUDEV_COND
-XAGYLSRC = xagylfw-udev.c xagylConnect-udev.c xagylIO-udev.c 
-  # xagylControl-udev.c
-
-else
-if LIBFTDI_COND
-XAGYLSRC = xagylfw-ftdi.c xagylIO-ftdi.c xagylConnect-ftdi.c
-  # xagylControl-ftdi.c
-endif
-endif
-
+  $(LIBUSB_CFLAGS) \
+  -I./sx -I./xagyl -I./zwo -I./brightstar \
+  $(DYNLIB_EXTN_CFLAGS)
 
 lib_LTLIBRARIES = liboafilterwheel.la
 
+if LIBUDEV_COND
+XAGYLDIR = xagyl
+XAGYLLIB = $(XAGYLDIR)/libxagyl.la
+BRIGHTSTARDIR = brightstar
+BRIGHTSTARLIB = $(BRIGHTSTARDIR)/libbrightstar.la
+endif
+
+if LIBFTDI_COND
+XAGYLDIR = xagyl
+XAGYLLIB = $(XAGYLDIR)/libxagyl.la
+endif
+
+if LIBZWOFW_COND
+ZWODIR = zwo
+ZWOLIB = $(ZWODIR)/libzwo.la
+endif
+
+SUBDIRS = sx $(XAGYLDIR) $(ZWODIR) $(BRIGHTSTARDIR)
+
 liboafilterwheel_la_SOURCES = \
-	oafw.c debug.c unimplemented.c utils.c \
-	sxfw.c sxConnect.c sxControl.c sxController.c sxCallback.c sxConfig.c \
-        sxIO.c \
-	xagylControl.c xagylConfig.c xagylController.c xagylCallback.c \
-	$(XAGYLSRC)
+	oafw.c debug.c unimplemented.c utils.c genericControl.c genericCallback.c
+
+liboafilterwheel_la_LIBADD = \
+  sx/libsx.la $(XAGYLLIB) $(ZWOLIB) $(BRIGHTSTARLIB)
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
 

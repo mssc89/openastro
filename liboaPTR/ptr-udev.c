@@ -2,7 +2,7 @@
  *
  * ptr-udev.c -- Find PTR devices using (Linux) udev
  *
- * Copyright 2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2017,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -26,6 +26,7 @@
 
 #include <oa_common.h>
 
+#include <stdio.h>
 #include <libudev.h>
 #include <errno.h>
 #include <sys/ioctl.h>
@@ -76,7 +77,6 @@ oaPTREnumerate ( PTR_LIST* deviceList )
   struct timeval		timeout;
   uint32_t			major = 0, minor = 0;
 
-
   if (!( udev = udev_new())) {
     fprintf ( stderr, "can't get connection to udev\n" );
     return -OA_ERR_SYSTEM_ERROR;
@@ -100,7 +100,11 @@ oaPTREnumerate ( PTR_LIST* deviceList )
       pid = udev_device_get_sysattr_value ( dev, "idProduct" );
       serialNo = udev_device_get_sysattr_value ( dev, "serial" );
       havePTR = 0;
+#ifdef PTRV1
       if ( !strcmp ( "04d8", vid ) && !strcmp ( "00df", pid )) {
+#else
+      if ( !strcmp ( "04b4", vid ) && !strcmp ( "0003", pid )) {
+#endif
         havePTR = 1;
       }
 
@@ -139,8 +143,8 @@ oaPTREnumerate ( PTR_LIST* deviceList )
         // and run inquiries to get the product name and firmware version
 
         if (( ptrDesc = open ( deviceNode, O_RDWR | O_NOCTTY )) < 0 ) {
-          fprintf ( stderr, "Can't open %s read-write, errno = %d\n",
-              deviceNode, errno );
+          fprintf ( stderr, "%s: Can't open %s read-write, errno = %d (%s)\n",
+              __FUNCTION__, deviceNode, errno, strerror ( errno ));
         } else {
           if ( ioctl ( ptrDesc, TIOCEXCL )) {
             int errnoCopy = errno;
@@ -168,8 +172,13 @@ oaPTREnumerate ( PTR_LIST* deviceList )
           tio.c_cc[VTIME] = 4;
           tio.c_cflag &= ~PARENB; // no parity
           tio.c_cflag &= ~CSTOPB; // 1 stop bit
+#ifdef PTRV1
           cfsetispeed ( &tio, B38400 );
           cfsetospeed ( &tio, B38400 );
+#else
+          cfsetispeed ( &tio, B3000000 );
+          cfsetospeed ( &tio, B3000000 );
+#endif
           if ( tcsetattr ( ptrDesc, TCSANOW, &tio )) {
             int errnoCopy = errno;
             errno = 0;
@@ -179,6 +188,8 @@ oaPTREnumerate ( PTR_LIST* deviceList )
             continue;
           }
 
+          tcflush ( ptrDesc, TCIOFLUSH );
+
           for ( i = 0; i < 2; i++ ) {
             // ctrl-C
             if ( _ptrWrite ( ptrDesc, "\003", 1 )) {
@@ -187,16 +198,24 @@ oaPTREnumerate ( PTR_LIST* deviceList )
               close ( ptrDesc );
               continue;
               // we need to wait at least 5ms here for the PTR to respond
-              usleep ( 100000 );
+              usleep ( 300000 );
             }
 
-            // now flush the input buffer to get rid of the echoed "^C" and
-            // the PTR prompt
-
-            tcflush ( ptrDesc, TCIFLUSH );
+            FD_ZERO ( &readable );
+            FD_SET ( ptrDesc, &readable );
+            timeout.tv_sec = 2;
+            timeout.tv_usec = 0;
+            if ( select ( ptrDesc + 1, &readable, 0, 0, &timeout ) == 0 ) {
+              fprintf ( stderr, "%s: PTR select #1 timed out\n", __FUNCTION__ );
+            } else {
+              numRead = _ptrRead ( ptrDesc, buffer, sizeof ( buffer ) - 1 );
+              if ( numRead <= 0 ) {
+                fprintf ( stderr, "%s: PTR ctrl-C not found\n", __FUNCTION__ );
+              }
+            }
           }
 
-          usleep ( 100000 );
+          usleep ( 300000 );
 
           if ( _ptrWrite ( ptrDesc, "sysreset\r", 9 )) {
             fprintf ( stderr, "%s: failed to write sysreset to %s\n",
@@ -205,6 +224,8 @@ oaPTREnumerate ( PTR_LIST* deviceList )
             continue;
           }
 
+					// On the original PTR:
+					//
           // After a reset we should get seven lines something like:
           //
           // sysreset
@@ -220,11 +241,33 @@ oaPTREnumerate ( PTR_LIST* deviceList )
           //
           // Internal clock synchronized: 20160531T212127.000
           // PTR-0.1 >
+					//
+					// On the PTR-2 we have:
+					//
+          // sysreset
+          // <blank line>
+          // PTR-2.0 YYYY-MM-DD
+          // ------------------
+					// PTR-2.0 >
+					//
+					// and that appears to be it
 
-          usleep ( 100000 );
-
+					// Set a sentinel value for nameBuffer.  Mostly for debugging
+					( void ) strcpy ( nameBuffer, "unnamed" );
           result = 0;
+#ifdef PTRV1
           for ( i = 0; i < 7 && !result; i++ ) {
+#else
+					// 20 here just to give a bit of headroom for software changes
+          for ( i = 0; i < 20 && !result; i++ ) {
+#endif
+            FD_ZERO ( &readable );
+            FD_SET ( ptrDesc, &readable );
+            timeout.tv_sec = 2;
+            timeout.tv_usec = 0;
+            if ( select ( ptrDesc + 1, &readable, 0, 0, &timeout ) == 0 ) {
+              fprintf ( stderr, "%s: PTR select #3 timed out\n", __FUNCTION__ );
+            }
             numRead = _ptrRead ( ptrDesc, buffer, sizeof ( buffer ) - 1 );
             if ( numRead < 0 ) {
               perror(0);
@@ -234,7 +277,10 @@ oaPTREnumerate ( PTR_LIST* deviceList )
                 fprintf ( stderr, "%s: no characters read from PTR\n",
                     __FUNCTION__ );
               } else {
-                if (( namePtr = strstr ( buffer, "PTR-" )) &&
+								// i non-zero because the first time we'll read the prompt and
+								// sysreset command being echoed back, but we want to read
+								// up to the PTR version and date line.
+                if ( i && ( namePtr = strstr ( buffer, "PTR-" )) &&
                     isdigit ( namePtr[4] ) && namePtr[5] == '.' ) {
                   endPtr = namePtr + 5;
                   major = namePtr[4] - '0';
@@ -248,6 +294,7 @@ oaPTREnumerate ( PTR_LIST* deviceList )
             }
           }
 
+#ifdef PTRV1
           // Assuming we have found something useful, wait for the remaining
           // lines and clean up
 
@@ -257,7 +304,7 @@ oaPTREnumerate ( PTR_LIST* deviceList )
             timeout.tv_sec = 2;
             timeout.tv_usec = 0;
             if ( select ( ptrDesc + 1, &readable, 0, 0, &timeout ) == 0 ) {
-              fprintf ( stderr, "%s: PTR select timed out\n", __FUNCTION__ );
+              fprintf ( stderr, "%s: PTR select #3 timed out\n", __FUNCTION__ );
               result = -1;
             } else {
               do {
@@ -270,8 +317,10 @@ oaPTREnumerate ( PTR_LIST* deviceList )
               } while ( !strstr ( buffer, "lock" ));
             }
           }
+#endif
 
-          tcflush ( ptrDesc, TCIFLUSH );
+					// Hopefully this should ditch anyting that's left in the buffers
+          tcflush ( ptrDesc, TCIOFLUSH );
           close ( ptrDesc );
 
           if ( result < 0 ) {
@@ -284,15 +333,13 @@ oaPTREnumerate ( PTR_LIST* deviceList )
             udev_device_unref ( dev );
             udev_enumerate_unref ( enumerate );
             udev_unref ( udev );
-            _oaFreePTRDeviceList ( deviceList );
             return -OA_ERR_MEM_ALLOC;
           }
           if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
             udev_device_unref ( dev );
             udev_enumerate_unref ( enumerate );
             udev_unref ( udev );
-            free (( void* ) ptr );
-            _oaFreePTRDeviceList ( deviceList );
+            ( void ) free (( void* ) ptr );
             return -OA_ERR_MEM_ALLOC;
           }
           _oaInitPTRDeviceFunctionPointers ( ptr );
@@ -307,9 +354,8 @@ oaPTREnumerate ( PTR_LIST* deviceList )
           ptr->init = oaPTRInit;
           ( void ) strncpy ( _private->sysPath, deviceNode, PATH_MAX );
           if (( ret = _oaCheckPTRArraySize ( deviceList )) < 0 ) {
-            free (( void* ) ptr );
-            free (( void* ) _private );
-            _oaFreePTRDeviceList ( deviceList );
+            ( void ) free (( void* ) ptr );
+            ( void ) free (( void* ) _private );
             udev_device_unref ( dev );
             udev_enumerate_unref ( enumerate );
             udev_unref ( udev );

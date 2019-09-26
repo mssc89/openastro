@@ -2,7 +2,7 @@
  *
  * IIDCcallback.c -- Thread for handling callbacks to user code
  *
- * Copyright 2015 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -35,6 +35,7 @@
 #include "IIDC.h"
 #include "IIDCoacam.h"
 #include "IIDCstate.h"
+#include "IIDCprivate.h"
 
 
 void*
@@ -44,7 +45,7 @@ oacamIIDCcallbackHandler ( void* param )
   IIDC_STATE*		cameraInfo = camera->_private;
   int			exitThread = 0;
   CALLBACK*		callback;
-  void*			(*callbackFunc)( void*, void*, int);
+  void*			(*callbackFunc)( void*, void*, int, void* );
   dc1394video_frame_t*	frameData;
 
   do {
@@ -71,11 +72,12 @@ oacamIIDCcallbackHandler ( void* param )
           callbackFunc = callback->callback;
           frameData = callback->buffer;
           callbackFunc ( callback->callbackArg, frameData->image,
-              callback->bufferLen );
+              callback->bufferLen, 0 );
           // We can only requeue frames if we're still streaming
           pthread_mutex_lock ( &cameraInfo->commandQueueMutex );
           if ( cameraInfo->isStreaming ) {
-            dc1394_capture_enqueue ( cameraInfo->iidcHandle, callback->buffer );
+            p_dc1394_capture_enqueue ( cameraInfo->iidcHandle,
+								callback->buffer );
           }
           pthread_mutex_unlock ( &cameraInfo->commandQueueMutex );
           pthread_mutex_lock ( &cameraInfo->callbackQueueMutex );

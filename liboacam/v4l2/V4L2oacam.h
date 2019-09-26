@@ -2,7 +2,7 @@
  *
  * V4L2oacam.h -- header for V4L2 camera API
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -34,7 +34,7 @@
 
 #define	SYS_V4L_PATH		"/sys/class/video4linux"
 
-extern int		oaV4L2GetCameras ( CAMERA_LIST*, int );
+extern int		oaV4L2GetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaV4L2InitCamera ( oaCameraDevice* );
 extern int              oaV4L2CloseCamera ( oaCamera* );
 
@@ -50,7 +50,7 @@ extern int		oaV4L2CameraGetControlDiscreteSet ( oaCamera*, int,
 				int32_t*, int64_t** );
 
 extern int		oaV4L2CameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int		oaV4L2CameraStopStreaming ( oaCamera* );
 extern int		oaV4L2CameraIsStreaming ( oaCamera* );
 

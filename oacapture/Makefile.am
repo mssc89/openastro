@@ -1,7 +1,8 @@
 #
 # Makefile.am -- oacapture Makefile template
 #
-# Copyright 2013,2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+# Copyright 2013,2014,2015,2016,2017,2018,2019
+#   James Fidell (james@openastroproject.org)
 #
 # License:
 #
@@ -29,36 +30,27 @@
 
 SUBDIRS = icons desktop translations
 
-AM_CPPFLAGS = -I$(top_srcdir)/include $(FFMPEG_CFLAGS) $(APP_PATH_CFLAGS) \
-  $(DEFAULT_PATH_CFLAGS) $(LIBWINDIB_CFLAGS) -D__STDC_CONSTANT_MACROS \
-  -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\"
+AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common $(FFMPEG_CFLAGS) \
+	$(APP_PATH_CFLAGS) $(DEFAULT_PATH_CFLAGS) $(LIBWINDIB_CFLAGS) \
+	-D__STDC_CONSTANT_MACROS -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\" \
+	-DOACAPTURE
 
-MOC_CPPFLAGS = -I$(top_srcdir)/include $(MOC_CFLAGS) $(APP_PATH_CFLAGS) \
-  $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS \
-  -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\"
+MOC_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/common $(MOC_CFLAGS) \
+	$(APP_PATH_CFLAGS) $(DEFAULT_PATH_CFLAGS) -D__STDC_CONSTANT_MACROS \
+  -DTRANSLATE_DIR=\"${datadir}/$(bin_PROGRAMS)/\" -DOACAPTURE
 
 bin_PROGRAMS = oacapture
 BUILT_SOURCES = version.h
-oacapture_SOURCES = autorunSettings.cc camera.cc cameraSettings.cc \
-  cameraWidget.cc captureSettings.cc captureWidget.cc controlWidget.cc \
-  demosaicSettings.cc filterSettings.cc filterWheel.cc generalSettings.cc \
-  histogramSettings.cc histogramWidget.cc imageWidget.cc mainWindow.cc \
-  oacapture.cc outputAVI.cc outputFITS.cc outputHandler.cc outputSER.cc \
-  outputTIFF.cc outputPNG.cc previewWidget.cc profileSettings.cc \
-  settingsWidget.cc targets.cc zoomWidget.cc advancedSettings.cc \
-  outputFFMPEG.cc outputMOV.cc outputDIB.cc focusOverlay.cc timer.cc \
-  fitsSettings.cc timerSettings.cc \
-  moc_autorunSettings.cc moc_camera.cc moc_cameraSettings.cc \
-  moc_cameraWidget.cc moc_captureSettings.cc moc_captureWidget.cc \
-  moc_controlWidget.cc moc_filterSettings.cc \
-  moc_generalSettings.cc moc_imageWidget.cc moc_mainWindow.cc \
-  moc_previewWidget.cc moc_profileSettings.cc moc_settingsWidget.cc \
-  moc_zoomWidget.cc moc_advancedSettings.cc moc_focusOverlay.cc \
-  moc_fitsSettings.cc moc_timerSettings.cc moc_demosaicSettings.cc \
-  moc_histogramSettings.cc \
+oacapture_SOURCES = cameraWidget.cc captureWidget.cc controlWidget.cc \
+  imageWidget.cc mainWindow.cc oacapture.cc previewWidget.cc zoomWidget.cc \
+	trampoline.cc displayWindow.cc \
+	moc_cameraWidget.cc moc_captureWidget.cc moc_controlWidget.cc \
+	moc_displayWindow.cc moc_imageWidget.cc moc_mainWindow.cc \
+	moc_previewWidget.cc moc_zoomWidget.cc \
   qrc_oacapture.cc
 
 oacapture_LDADD = \
+  ../common/liboacommon.la \
   ../liboacam/liboacam.la \
   ../liboaimgproc/liboaimgproc.la \
   ../liboademosaic/liboademosaic.la \
@@ -74,8 +66,9 @@ oacapture_LDADD = \
   $(LIBDC1394_LIBS) \
   $(LIBFTDI_LIBS) \
   $(LIBUSB_LIBS) \
-  $(LIBASI_LIBS) \
   $(LIBASI2_LIBS) \
+  $(LIBZWOFW_LIBS) \
+	$(LIBGPHOTO2_LIBS) \
   $(OSX_FRAMEWORKS)
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
@@ -95,6 +88,7 @@ ui-%.h: %.ui
 	@UIC@ -o $@ $<
 
 qrc_%.cc: %.qrc
+	$(LN_S) -f $(top_srcdir)/qt-icons .
 	@RCC@ -o $@ $<
 
 mostlyclean-local:

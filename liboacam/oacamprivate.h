@@ -2,7 +2,7 @@
  *
  * oacamprivate.h -- shared declarations not exposed to the cruel world
  *
- * Copyright 2014,2015,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,6 +28,7 @@
 #define OA_CAM_PRIVATE_H
 
 #include <oa_common.h>
+#include <openastro/camera.h>
 #include <openastro/controller.h>
 
 #define OA_CLEAR(x)	memset ( &(x), 0, sizeof ( x ))
@@ -54,6 +55,8 @@ extern void		oacamDebugMsg ( int, const char*, ... );
 extern int64_t		oacamGetControlValue ( oaControlValue* );
 extern int		_oaCheckCameraArraySize ( CAMERA_LIST* );
 extern void		_oaFreeCameraDeviceList ( CAMERA_LIST* );
+extern int		_oaInitCameraStructs ( oaCamera**, void**, size_t, COMMON_INFO**);
+
 
 extern char*		installPathRoot;
 
@@ -66,5 +69,7 @@ extern char*		installPathRoot;
 #define OA_CAM_CTRL_AUTO_MAX(x)         maxVal[OA_CAM_CTRL_MODIFIER_AUTO][OA_CAM_CTRL_MODE_BASE(x)]
 #define OA_CAM_CTRL_AUTO_DEF(x)         defVal[OA_CAM_CTRL_MODIFIER_AUTO][OA_CAM_CTRL_MODE_BASE(x)]
 #define OA_CAM_CTRL_AUTO_STEP(x)        stepVal[OA_CAM_CTRL_MODIFIER_AUTO][OA_CAM_CTRL_MODE_BASE(x)]
+
+#define FREE_DATA_STRUCTS		free (( void* ) commonInfo ); free (( void* ) cameraInfo ); free (( void* ) camera )
 
 #endif /* OA_CAM_PRIVATE_H */

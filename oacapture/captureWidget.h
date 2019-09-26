@@ -2,7 +2,8 @@
  *
  * captureWidget.h -- class declaration
  *
- * Copyright 2013,2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2017,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +29,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtCore>
@@ -42,6 +43,7 @@
 #define	CAPTURE_PNG	4
 #define	CAPTURE_FITS	5
 #define	CAPTURE_MOV	6
+#define	CAPTURE_NAMED_PIPE	7
 
 class CaptureWidget : public QGroupBox
 {
@@ -64,6 +66,7 @@ class CaptureWidget : public QGroupBox
     void		enablePNGCapture ( int );
     void		enableFITSCapture ( int );
     void		enableMOVCapture ( int );
+    void		enableNamedPipeCapture ( int );
     int			singleAutorunFinished ( void );
     void		enableAutorun ( void );
     QString		getCurrentFilterName ( void );
@@ -113,6 +116,7 @@ class CaptureWidget : public QGroupBox
     int			haveSER;
     int			haveFITS;
     int			haveMOV;
+    int			haveNamedPipe;
     QLineEdit*		framesInputBox;
     QLineEdit*		secondsInputBox;
     int			filterSequenceRemaining;

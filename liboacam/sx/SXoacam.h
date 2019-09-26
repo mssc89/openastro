@@ -2,7 +2,8 @@
  *
  * SXoacam.h -- header for Starlight Xpress camera API
  *
- * Copyright 2014,2015,2016,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -27,7 +28,7 @@
 #ifndef OA_SX_OACAM_H
 #define OA_SX_OACAM_H
 
-extern int		oaSXGetCameras ( CAMERA_LIST*, int );
+extern int		oaSXGetCameras ( CAMERA_LIST*, unsigned long, int );
 extern oaCamera*	oaSXInitCamera ( oaCameraDevice* );
 extern int              oaSXCloseCamera ( oaCamera* );
 
@@ -41,7 +42,7 @@ extern int		oaSXCameraGetControlRange ( oaCamera*, int,
 				int64_t*, int64_t*, int64_t*, int64_t* );
 
 extern int		oaSXCameraStartStreaming ( oaCamera*,
-				void* (*)(void*, void*, int), void* );
+				void* (*)(void*, void*, int, void* ), void* );
 extern int              oaSXCameraStopStreaming ( oaCamera* );
 extern int              oaSXCameraIsStreaming ( oaCamera* );
 
@@ -52,6 +53,8 @@ extern void*		oacamSXcallbackHandler ( void* );
 
 extern const FRAMESIZES* oaSXCameraGetFrameSizes ( oaCamera* );
 extern int		oaSXCameraGetFramePixelFormat ( oaCamera* );
+extern int		oaSXCameraTestROISize ( oaCamera*, unsigned int,
+									unsigned int, unsigned int*, unsigned int* );
 
 extern int		_SXsetTimer ( SX_STATE*, unsigned int );
 

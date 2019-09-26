@@ -2,7 +2,7 @@
  *
  * mainWindow.h -- class declaration
  *
- * Copyright 2015, 2016 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +28,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtGui>
@@ -38,24 +38,26 @@ extern "C" {
 #include <openastro/filterwheel.h>
 } 
 
+#include "captureSettings.h"
+#include "timerSettings.h"
+#include "demosaicSettings.h"
+#include "profileSettings.h"
+#include "filterSettings.h"
+#include "generalSettings.h"
+#include "cameraSettings.h"
+
 #include "viewWidget.h"
 #include "focusOverlay.h"
 #include "controlsWidget.h"
-/*
-#include "configuration.h"
-#include "captureWidget.h"
-#include "imageWidget.h"
-#include "zoomWidget.h"
-#include "cameraWidget.h"
-#include "histogramWidget.h"
-*/
+
+extern cameraConfig		cameraConf;
 
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
 
   public:
-			MainWindow();
+			MainWindow ( QString );
 			~MainWindow();
     void		clearTemperature ( void );
     void		resetTemperatureLabel ( void );
@@ -63,10 +65,10 @@ class MainWindow : public QMainWindow
     void		destroyLayout ( QLayout* );
     void		setFlipX ( int );
     void		setFlipY ( int );
-    void		writeConfig ( void );
     void		configure ( void );
     void		createControlWidgets ( void );
     void		createViewWindow ( void );
+    void		updateConfig ( void );
 
   private:
     QMenu*		fileMenu;
@@ -92,12 +94,17 @@ class MainWindow : public QMainWindow
     QLabel*		fpsMaxValue;
     QLabel*		fpsActualValue;
 */
+		QLabel*		stackedLabel;
+		QLabel*		stackedValue;
+
     QStatusBar*		statusLine;
     QLabel*		tempValue;
     int			updateTemperatureLabel;
     QLabel*		wheelStatus;
+    QString   userConfigFile;
 
-    void		readConfig ( void );
+    void		readConfig ( QString );
+    void		writeConfig ( QString );
     void		createStatusBar ( void );
     void		createMenus ( void );
     void		doDisconnectCam ( void );
@@ -186,7 +193,12 @@ class MainWindow : public QMainWindow
     void		advancedClosed ( void );
     void		doColouriseSettings ( void );
     void		setTemperature ( void );
+    void		setStackedFrames ( void );
     void		reveal ( void );
     void		doFITSSettings ( void );
     void		frameWriteFailedPopup ( void );
+		void    outputUnwritable ( void );
+    int     outputExists ( void );
+    void    outputExistsUnwritable ( void );
+    void    createFileFailed ( void );
 };

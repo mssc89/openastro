@@ -2,7 +2,7 @@
  *
  * cameraWidget.cc -- class for the camera widget in the UI
  *
- * Copyright 2013,2014,2015,2017,2018
+ * Copyright 2013,2014,2015,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -33,6 +33,9 @@ extern "C" {
 #include <openastro/demosaic.h>
 }
 
+#include "commonState.h"
+#include "commonConfig.h"
+
 #include "configuration.h"
 #include "cameraWidget.h"
 #include "controlWidget.h"
@@ -49,12 +52,12 @@ CameraWidget::CameraWidget ( QWidget* parent ) : QGroupBox ( parent )
 
   binning2x2 = new QCheckBox ( tr ( "2x2 Binning" ), this );
   binning2x2->setToolTip ( tr ( "Enable 2x2 binning in camera" ));
-  binning2x2->setChecked ( config.binning2x2 );
+  binning2x2->setChecked ( commonConfig.binning2x2 );
   connect ( binning2x2, SIGNAL( stateChanged ( int )), this,
       SLOT( setBinning ( int )));
 
   tempLabel = new QLabel();
-  if ( config.tempsInC ) {
+  if ( generalConf.tempsInC ) {
     tempLabel->setText ( tr ( "Temp (C)" ));
   } else {
     tempLabel->setText ( tr ( "Temp (F)" ));
@@ -72,7 +75,7 @@ CameraWidget::CameraWidget ( QWidget* parent ) : QGroupBox ( parent )
   fpsActualValue = new QLabel ( "0" );
   fpsActualValue->setFixedWidth ( 50 );
 
-  if ( !config.dockableControls ) {
+  if ( !generalConf.dockableControls ) {
     setTitle ( tr ( "Camera" ));
   }
 
@@ -102,8 +105,9 @@ void
 CameraWidget::configure ( void )
 {
   unsigned int format;
-  int numActions = 0, currentAction = 0;
+  int numActions = 0, currentAction = 0, binning = 0;
   int foundConfiguredFormat = 0;
+	int firstFormat = -1;
 
   if ( !inputFormatList.empty()) {
     disconnect ( inputFormatMenu, SIGNAL( currentIndexChanged ( int )), 
@@ -113,7 +117,8 @@ CameraWidget::configure ( void )
   inputFormatList.clear();
 
   for ( format = 1; format < OA_PIX_FMT_LAST_P1; format++ ) {
-    if ( state.camera->hasFrameFormat ( format )) {
+    if ( commonState.camera->hasFrameFormat ( format )) {
+			firstFormat = format;
       inputFormatMenu->addItem ( tr ( oaFrameFormats[ format ].name ));
       inputFormatMenu->setItemData ( numActions,
           tr ( oaFrameFormats[ format ].simpleName ), Qt::ToolTipRole );
@@ -127,53 +132,61 @@ CameraWidget::configure ( void )
     }
   }
   if ( !foundConfiguredFormat ) {
-    config.inputFrameFormat = OA_PIX_FMT_RGB24;
+    config.inputFrameFormat = firstFormat;
     currentAction = 0;
   }
 
   connect ( inputFormatMenu, SIGNAL( currentIndexChanged ( int )), 
       this, SLOT( changeFrameFormat ( int )));
 
-  changeFrameFormat ( currentAction );
-  if ( config.forceInputFrameFormat ) {
-    updateForceFrameFormat ( 0, config.forceInputFrameFormat );
+	// Shouldn't need to do this is there's only one possible frame format
+	if ( numActions > 1 ) {
+		changeFrameFormat ( currentAction );
+	}
+
+  if ( cameraConf.forceInputFrameFormat ) {
+    updateForceFrameFormat ( 0, cameraConf.forceInputFrameFormat );
   }
-  binning2x2->setEnabled ( state.camera->hasBinning ( 2 ) ? 1 : 0 );
+	binning = commonState.camera->hasBinning ( 2 ) ? 1 : 0;
+	if ( binning ) {
+		commonState.camera->setControl ( OA_CAM_CTRL_BINNING, OA_BIN_MODE_NONE );
+	}
+	binning2x2->setEnabled ( binning );
 }
 
 
 void
 CameraWidget::setBinning ( int newState )
 {
-  int oldVal = config.binning2x2;
+  int oldVal = commonConfig.binning2x2;
 
-  if ( state.camera->isInitialised()) {
+  if ( commonState.camera->isInitialised()) {
     if ( newState == Qt::Unchecked ) {
-      state.camera->setControl ( OA_CAM_CTRL_BINNING, OA_BIN_MODE_NONE );
-      config.binning2x2 = 0;
+      commonState.camera->setControl ( OA_CAM_CTRL_BINNING, OA_BIN_MODE_NONE );
+      commonConfig.binning2x2 = 0;
       // if we're "unbinning", double the expected resolution.
       // imageWidget::configure will sort it out if there's no match
       if ( oldVal ) {
-        config.imageSizeX *= 2;
-        config.imageSizeY *= 2;
+        commonConfig.imageSizeX *= 2;
+        commonConfig.imageSizeY *= 2;
       }
-      state.binModeX = state.binModeY = 1;
-      state.binningValid = 1;
+      commonState.binModeX = commonState.binModeY = 1;
+      commonState.binningValid = 1;
     } else {
-      state.camera->setControl ( OA_CAM_CTRL_BINNING, OA_BIN_MODE_2x2 );
-      config.binning2x2 = 1;
+      commonState.camera->setControl ( OA_CAM_CTRL_BINNING, OA_BIN_MODE_2x2 );
+      commonConfig.binning2x2 = 1;
       // if we're binning, half the expected resolution.
       // imageWidget::configure will sort it out if there's no match
       if ( !oldVal ) {
-        config.imageSizeX /= 2;
-        config.imageSizeY /= 2;
+        commonConfig.imageSizeX /= 2;
+        commonConfig.imageSizeY /= 2;
       }
-      state.binModeX = state.binModeY = 2;
-      state.binningValid = 1;
+      commonState.binModeX = commonState.binModeY = 2;
+      commonState.binningValid = 1;
     }
-    SET_PROFILE_CONFIG( binning2x2, config.binning2x2 );
-    SET_PROFILE_CONFIG( imageSizeX, config.imageSizeX );
-    SET_PROFILE_CONFIG( imageSizeY, config.imageSizeY );
+    SET_PROFILE_CONFIG( binning2x2, commonConfig.binning2x2 );
+    SET_PROFILE_CONFIG( imageSizeX, commonConfig.imageSizeX );
+    SET_PROFILE_CONFIG( imageSizeY, commonConfig.imageSizeY );
     state.imageWidget->configure();
   }
 }
@@ -190,7 +203,7 @@ void
 CameraWidget::updateFromConfig ( void )
 {
   if ( binning2x2->isEnabled()) {
-    binning2x2->setChecked ( config.binning2x2 );
+    binning2x2->setChecked ( commonConfig.binning2x2 );
   }
   /*
   if ( sixteenBit->isEnabled()) {
@@ -224,12 +237,12 @@ CameraWidget::setTemperature()
   float temp;
   QString stringVal;
 
-  temp = state.camera->getTemperature();
-  state.cameraTempValid = 1;
-  state.cameraTemp = temp;
+  temp = commonState.camera->getTemperature();
+  commonState.cameraTempValid = 1;
+  commonState.cameraTemp = temp;
 
   if ( updateTemperatureLabel == 1 ) {
-    if ( config.tempsInC ) {
+    if ( generalConf.tempsInC ) {
       tempLabel->setText ( tr ( "Temp (C)" ));
     } else {
       tempLabel->setText ( tr ( "Temp (F)" ));
@@ -237,7 +250,7 @@ CameraWidget::setTemperature()
     updateTemperatureLabel = 0;
   }
 
-  if ( !config.tempsInC ) {
+  if ( !generalConf.tempsInC ) {
     temp = temp * 9 / 5 + 32;
   }
   stringVal.setNum ( temp, 'g', 3 );
@@ -278,11 +291,11 @@ CameraWidget::changeFrameFormat ( int menuOption )
 {
   int newFormat = inputFormatList[ menuOption ];
 
-  if ( !state.camera->isInitialised()) {
+  if ( !commonState.camera->isInitialised()) {
     return;
   }
 
-  state.camera->setFrameFormat ( newFormat );
+  commonState.camera->setFrameFormat ( newFormat );
   state.previewWidget->setVideoFramePixelFormat ( newFormat );
   config.inputFrameFormat = newFormat;
 
@@ -293,13 +306,16 @@ CameraWidget::changeFrameFormat ( int menuOption )
   }
   state.captureWidget->enableTIFFCapture (
       ( !oaFrameFormats[ newFormat ].rawColour ||
-      ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   state.captureWidget->enablePNGCapture (
       ( !oaFrameFormats[ newFormat ].rawColour ||
-      ( config.demosaic && config.demosaicOutput )) ? 1 : 0 );
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   state.captureWidget->enableMOVCapture (( QUICKTIME_OK( newFormat ) ||
-      ( oaFrameFormats[ newFormat ].rawColour && config.demosaic &&
-      config.demosaicOutput )) ? 1 : 0 );
+      ( oaFrameFormats[ newFormat ].rawColour && commonConfig.demosaic &&
+      demosaicConf.demosaicOutput )) ? 1 : 0 );
+  state.captureWidget->enableNamedPipeCapture (
+      ( !oaFrameFormats[ newFormat ].rawColour ||
+      ( commonConfig.demosaic && demosaicConf.demosaicOutput )) ? 1 : 0 );
   return;
 }
 
@@ -318,7 +334,7 @@ CameraWidget::updateForceFrameFormat ( unsigned int oldFormat,
     inputFormatMenu->setEnabled ( 0 );
     disconnect ( inputFormatMenu, SIGNAL( currentIndexChanged ( int )), 
         this, SLOT( changeFrameFormat ( int )));
-    if ( state.camera->hasFrameFormat ( newFormat )) {
+    if ( commonState.camera->hasFrameFormat ( newFormat )) {
       n = inputFormatList.indexOf ( newFormat );
       inputFormatMenu->setCurrentIndex ( n );
     } else {
@@ -333,7 +349,7 @@ CameraWidget::updateForceFrameFormat ( unsigned int oldFormat,
     // forced format has been disabled.  Enable the menu.  If the old
     // format isn't supported by the camera, delete it from the menu.
 
-    if ( !state.camera->hasFrameFormat ( oldFormat )) {
+    if ( !commonState.camera->hasFrameFormat ( oldFormat )) {
       inputFormatMenu->removeItem ( 0 );
     }
     inputFormatMenu->setEnabled ( 1 );
@@ -347,10 +363,10 @@ CameraWidget::updateForceFrameFormat ( unsigned int oldFormat,
     // then delete it from the menu.  If the new format is not supported
     // by the camera, add it to the menu.  Set the correct menu option.
 
-    if ( !state.camera->hasFrameFormat ( oldFormat )) {
+    if ( !commonState.camera->hasFrameFormat ( oldFormat )) {
       inputFormatMenu->removeItem ( 0 );
     }
-    if ( state.camera->hasFrameFormat ( newFormat )) {
+    if ( commonState.camera->hasFrameFormat ( newFormat )) {
       n = inputFormatList.indexOf ( newFormat );
       inputFormatMenu->setCurrentIndex ( n );
     } else {

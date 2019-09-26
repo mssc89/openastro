@@ -2,7 +2,7 @@
  *
  * IIDCconnect.c -- Initialise IEEE1394/IIDC cameras
  *
- * Copyright 2013,2014,2015,2016,2017,2018
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -38,6 +38,7 @@
 #include "oacamprivate.h"
 #include "IIDCoacam.h"
 #include "IIDCstate.h"
+#include "IIDCprivate.h"
 
 
 static void _IIDCInitFunctionPointers ( oaCamera* );
@@ -108,49 +109,28 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   COMMON_INFO*		commonInfo;
   dc1394framerates_t	framerates;
 
-  if (!( camera = ( oaCamera* ) malloc ( sizeof ( oaCamera )))) {
-    perror ( "malloc oaCamera failed" );
+  if ( _oaInitCameraStructs ( &camera, ( void* ) &cameraInfo,
+      sizeof ( IIDC_STATE ), &commonInfo ) != OA_ERR_NONE ) {
     return 0;
   }
-  if (!( cameraInfo = ( IIDC_STATE* ) malloc ( sizeof ( IIDC_STATE )))) {
-    free (( void* ) camera );
-    perror ( "malloc IIDC_STATE failed" );
-    return 0;
-  }
-  if (!( commonInfo = ( COMMON_INFO* ) malloc ( sizeof ( COMMON_INFO )))) {
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
-    perror ( "malloc COMMON_INFO failed" );
-    return 0;
-  }
-  OA_CLEAR ( *camera );
-  OA_CLEAR ( *cameraInfo );
-  OA_CLEAR ( *commonInfo );
-  camera->_private = cameraInfo;
-  camera->_common = commonInfo;
 
-  _oaInitCameraFunctionPointers ( camera );
   _IIDCInitFunctionPointers ( camera );
 
   ( void ) strcpy ( camera->deviceName, device->deviceName );
   cameraInfo->initialised = 0;
   devInfo = device->_private;
 
-  iidcContext = dc1394_new();
+  iidcContext = p_dc1394_new();
   if ( !iidcContext ) {
     fprintf ( stderr, "%s: Can't get IIDC context\n", __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
-  if (!( iidcCam = dc1394_camera_new_unit ( iidcContext, devInfo->guid,
+  if (!( iidcCam = p_dc1394_camera_new_unit ( iidcContext, devInfo->guid,
       devInfo->unit ))) {
     fprintf ( stderr, "%s: dc1394_camera_new_unit failed\n", __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -178,11 +158,9 @@ oaIIDCInitCamera ( oaCameraDevice* device )
     }
   }
 
-  if ( dc1394_feature_get_all ( iidcCam, &features ) != DC1394_SUCCESS ) {
+  if ( p_dc1394_feature_get_all ( iidcCam, &features ) != DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_feature_get_all failed\n", __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -199,7 +177,7 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   // values we read from the current settings are actually the default
   // values for those controls
 
-  if ( dc1394_camera_reset ( iidcCam ) != DC1394_SUCCESS ) {
+  if ( p_dc1394_camera_reset ( iidcCam ) != DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_camera_reset failed\n", __FUNCTION__ );
   }
   // Allow the camera reset a little time to happen.  Doesn't seem to cause
@@ -295,25 +273,21 @@ oaIIDCInitCamera ( oaCameraDevice* device )
             oaOnOffControl =
                 OA_CAM_CTRL_MODE_ON_OFF( OA_CAM_CTRL_EXPOSURE_ABSOLUTE );
             // have to set the control to use the absolute settings...
-            if (( err = dc1394_feature_set_absolute_control ( iidcCam,
+            if (( err = p_dc1394_feature_set_absolute_control ( iidcCam,
                 DC1394_FEATURE_SHUTTER, DC1394_ON ) != DC1394_SUCCESS )) {
               fprintf ( stderr, "%s: dc1394_feature_set_absolute_control "
                   "failed, err: %d\n", __FUNCTION__, err );
-              free ( commonInfo );
-              free ( cameraInfo );
-              free ( camera );
+              FREE_DATA_STRUCTS;
               return 0;
             }
             // and disable auto mode, as we don't support that at the moment
             // FIX ME -- need to deal with this when we do -- auto mode in
             // IIDC cameras may be more than just on/off
-            if ( dc1394_feature_set_mode ( iidcCam, DC1394_FEATURE_SHUTTER,
+            if ( p_dc1394_feature_set_mode ( iidcCam, DC1394_FEATURE_SHUTTER,
                 DC1394_FEATURE_MODE_MANUAL ) != DC1394_SUCCESS ) {
               fprintf ( stderr, "%s: dc1394_feature_set_mode failed for "
                   "shutter speed\n", __FUNCTION__ );
-              free ( commonInfo );
-              free ( cameraInfo );
-              free ( camera );
+              FREE_DATA_STRUCTS;
               return 0;
             }
 
@@ -553,13 +527,11 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   // be supported.  For the moment we'll ignore YUY2 and assume the camera
   // is colour if RGB shows up, monochrome otherwise.
 
-  if ( dc1394_video_get_supported_modes ( iidcCam, &videoModes ) !=
+  if ( p_dc1394_video_get_supported_modes ( iidcCam, &videoModes ) !=
       DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_video_get_supported_modes failed",
         __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -580,8 +552,9 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   cameraInfo->currentIIDCMode = 0;
   cameraInfo->currentCodec = 0;
 
-  camera->features.rawMode = camera->features.demosaicMode = 0;
-  camera->features.hasReset = 1;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
+  camera->features.flags |= OA_CAM_FEATURE_READABLE_CONTROLS;
+  camera->features.flags |= OA_CAM_FEATURE_STREAMING;
 
   if ( cameraInfo->haveFormat7 ) {
     if ( _processFormat7Modes ( camera, iidcCam, videoModes )) {
@@ -591,31 +564,28 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   }
   if ( !cameraInfo->haveFormat7 ) {
     if ( _processNonFormat7Modes ( camera, iidcCam, videoModes )) {
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+      FREE_DATA_STRUCTS;
       return 0;
     }
   }
 
   if ( !cameraInfo->currentIIDCMode ) {
     fprintf ( stderr, "%s: No suitable video format found", __FUNCTION__ );
-    free (( void* ) commonInfo );
-    free (( void* ) cameraInfo );
-    free (( void* ) camera );
+		free (( void* ) cameraInfo->frameSizes[1].sizes );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
   camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_FRAME_FORMAT ) = OA_CTRL_TYPE_DISCRETE;
 
   if ( !cameraInfo->haveFormat7 ) {
-    if ( dc1394_video_get_supported_framerates ( iidcCam,
+    if ( p_dc1394_video_get_supported_framerates ( iidcCam,
         cameraInfo->currentIIDCMode, &framerates ) != DC1394_SUCCESS ) {
       fprintf ( stderr, "%s: dc1394_video_get_supported_framerates failed\n",
          __FUNCTION__ );
     }
     if ( framerates.num > 1 ) {
-      camera->features.frameRates = 1;
+			camera->features.flags |= OA_CAM_FEATURE_FRAME_RATES;
     }
   }
 
@@ -628,11 +598,10 @@ oaIIDCInitCamera ( oaCameraDevice* device )
 
   if ( pthread_create ( &( cameraInfo->controllerThread ), 0,
       oacamIIDCcontroller, ( void* ) camera )) {
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+		free (( void* ) cameraInfo->frameSizes[1].sizes );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   if ( pthread_create ( &( cameraInfo->callbackThread ), 0,
@@ -642,11 +611,10 @@ oaIIDCInitCamera ( oaCameraDevice* device )
     cameraInfo->stopControllerThread = 1;
     pthread_cond_broadcast ( &cameraInfo->commandQueued );
     pthread_join ( cameraInfo->controllerThread, &dummy );
-    free (( void* ) camera->_common );
-    free (( void* ) camera->_private );
-    free (( void* ) camera );
+		free (( void* ) cameraInfo->frameSizes[1].sizes );
     oaDLListDelete ( cameraInfo->commandQueue, 0 );
     oaDLListDelete ( cameraInfo->callbackQueue, 0 );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
@@ -657,23 +625,22 @@ oaIIDCInitCamera ( oaCameraDevice* device )
 
   use1394B = 1;
   dc1394bool_t pwr;
-  if ( dc1394_camera_get_broadcast ( iidcCam, &pwr ) != DC1394_SUCCESS ) {
+  if ( p_dc1394_camera_get_broadcast ( iidcCam, &pwr ) != DC1394_SUCCESS ) {
     use1394B = -1;
   }
 
   if ( use1394B >= 0 ) {
-    if ( dc1394_video_set_operation_mode ( iidcCam,
+    if ( p_dc1394_video_set_operation_mode ( iidcCam,
         ( iidcCam->bmode_capable == DC1394_TRUE ) ?
         DC1394_OPERATION_MODE_1394B : DC1394_OPERATION_MODE_LEGACY) !=
         DC1394_SUCCESS ) {
       fprintf ( stderr, "%s: dc1394_video_set_operation_mode failed\n",
           __FUNCTION__ );
-      free (( void* ) commonInfo );
-      free (( void* ) cameraInfo );
-      free (( void* ) camera );
+			free (( void* ) cameraInfo->frameSizes[1].sizes );
+      FREE_DATA_STRUCTS;
       return 0;
     }
-    if ( dc1394_video_set_iso_speed ( iidcCam,
+    if ( p_dc1394_video_set_iso_speed ( iidcCam,
         ( iidcCam->bmode_capable == DC1394_TRUE ) ?
         DC1394_ISO_SPEED_800 : DC1394_ISO_SPEED_400 ) != DC1394_SUCCESS ) {
       fprintf ( stderr, "%s: dc1394_video_set_iso_speed failed\n",
@@ -682,21 +649,17 @@ oaIIDCInitCamera ( oaCameraDevice* device )
   }
 
   /*
-  if ( dc1394_video_set_mode ( iidcCam, cameraInfo->currentIIDCMode ) !=
+  if ( p_dc1394_video_set_mode ( iidcCam, cameraInfo->currentIIDCMode ) !=
       DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_video_set_mode failed\n", __FUNCTION__ );
-    free ( commonInfo );
-    free ( cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
 
-  if ( dc1394_capture_setup ( iidcCam, OA_CAM_BUFFERS,
+  if ( p_dc1394_capture_setup ( iidcCam, OA_CAM_BUFFERS,
       DC1394_CAPTURE_FLAGS_DEFAULT ) != DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_capture_setup failed\n", __FUNCTION__ );
-    free ( commonInfo );
-    free ( cameraInfo );
-    free (( void* ) camera );
+    FREE_DATA_STRUCTS;
     return 0;
   }
   */
@@ -749,8 +712,9 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
   unsigned int			i, j, addResolution;
   unsigned int			numResolutions, rawModeFound, rgbModeFound;
   IIDC_STATE*			cameraInfo;
+	void*						tmpPtr;
 
-  if ( dc1394_format7_get_modeset ( iidcCam, &modeList ) != DC1394_SUCCESS ) {
+  if ( p_dc1394_format7_get_modeset ( iidcCam, &modeList ) != DC1394_SUCCESS ) {
     fprintf ( stderr, "%s: dc1394_format7_get_modeset return error\n",
         __FUNCTION__ );
     return -OA_ERR_CAMERA_IO;
@@ -824,7 +788,7 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
             cameraInfo->currentFrameFormat = OA_PIX_FMT_RGB24;
             rgbModeFound = 1;
             camera->frameFormats[ OA_PIX_FMT_RGB24 ] = 1;
-            camera->features.demosaicMode = 1;
+						camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
             addResolution = 1;
             break;
 
@@ -849,7 +813,7 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
             }
             // another little-endian guess
             camera->frameFormats[ OA_PIX_FMT_RGB48LE ] = 1;
-            camera->features.demosaicMode = 1;
+						camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
             addResolution = 1;
             break;
 
@@ -861,7 +825,7 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
             }
             // This is also a guess.  Could be GRBG, RGGB or BGGR
             camera->frameFormats[ OA_PIX_FMT_GBRG8 ] = 1;
-            camera->features.rawMode = 1;
+						camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
             rawModeFound = 1;
             addResolution = 1;
             break;
@@ -875,7 +839,7 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
             // This is also a guess.  Could be GRBG, RGGB or BGGR, and could
             // be big-endian
             camera->frameFormats[ OA_PIX_FMT_GBRG16LE ] = 1;
-            camera->features.rawMode = 1;
+						camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
             rawModeFound = 1;
             addResolution = 1;
             break;
@@ -901,11 +865,14 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
           }
         }
         if ( !found ) {
-          if (!(  cameraInfo->frameSizes[1].sizes = realloc (
-              cameraInfo->frameSizes[1].sizes, ( numResolutions + 1 ) *
-              sizeof ( FRAMESIZE )))) {
+          if (!( tmpPtr = realloc ( cameraInfo->frameSizes[1].sizes,
+								( numResolutions + 1 ) * sizeof ( FRAMESIZE )))) {
+						if ( cameraInfo->frameSizes[1].sizes ) {
+							free (( void* ) cameraInfo->frameSizes[1].sizes );
+						}
             return -OA_ERR_MEM_ALLOC;
           }
+					cameraInfo->frameSizes[1].sizes = tmpPtr;
           cameraInfo->frameSizes[1].sizes[ numResolutions ].x = w;
           cameraInfo->frameSizes[1].sizes[ numResolutions ].y = h;
           if ( w > cameraInfo->xSize ) {
@@ -924,6 +891,7 @@ _processFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
   }
 
   cameraInfo->frameSizes[1].numSizes = numResolutions;
+	camera->features.flags |= OA_CAM_FEATURE_FIXED_FRAME_SIZES;
   return OA_ERR_NONE;
 }
 
@@ -936,6 +904,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
   unsigned int          rawModeFound, rgbModeFound;
   dc1394color_coding_t  codec;
   IIDC_STATE*		cameraInfo;
+	void*					tmpPtr;
 
   numResolutions = 0;
   rawModeFound = rgbModeFound = 0;
@@ -943,7 +912,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
 
   for ( i = 0; i < videoModes.num; i++ ) {
     uint32_t w, h;
-    if ( dc1394_get_image_size_from_video_mode ( iidcCam, videoModes.modes[i],
+    if ( p_dc1394_get_image_size_from_video_mode ( iidcCam, videoModes.modes[i],
         &w, &h ) != DC1394_SUCCESS ) {
       fprintf ( stderr, "%s: dc1394_get_image_size_from_video_mode failed",
           __FUNCTION__ );
@@ -959,11 +928,14 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
       }
     }
     if ( !found ) {
-      if (!(  cameraInfo->frameSizes[1].sizes = realloc (
-          cameraInfo->frameSizes[1].sizes, ( numResolutions + 1 ) *
-          sizeof ( FRAMESIZE )))) {
-        return 0;
+      if (!( tmpPtr = realloc ( cameraInfo->frameSizes[1].sizes,
+					( numResolutions + 1 ) * sizeof ( FRAMESIZE )))) {
+				if ( cameraInfo->frameSizes[1].sizes ) {
+					free (( void* ) cameraInfo->frameSizes[1].sizes );
+				}
+        return -OA_ERR_MEM_ALLOC;
       }
+			cameraInfo->frameSizes[1].sizes = tmpPtr;
       cameraInfo->frameSizes[1].sizes[ numResolutions ].x = w;
       cameraInfo->frameSizes[1].sizes[ numResolutions ].y = h;
       if ( w > cameraInfo->xSize ) {
@@ -973,7 +945,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
       numResolutions++;
     }
 
-    if ( dc1394_get_color_coding_from_video_mode ( iidcCam,
+    if ( p_dc1394_get_color_coding_from_video_mode ( iidcCam,
         videoModes.modes[i], &codec ) != DC1394_SUCCESS ) {
       fprintf ( stderr, "%s: dc1394_get_color_coding_from_video_mode failed",
           __FUNCTION__ );
@@ -1033,7 +1005,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
         cameraInfo->currentCodec = codec;
         rgbModeFound = 1;
         camera->frameFormats[ OA_PIX_FMT_RGB24 ] = 1;
-        camera->features.demosaicMode = 1;
+				camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
         break;
 
       case DC1394_COLOR_CODING_MONO16:
@@ -1056,7 +1028,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
         }
         // another little-endian guess
         camera->frameFormats[ OA_PIX_FMT_RGB48LE ] = 1;
-        camera->features.demosaicMode = 1;
+				camera->features.flags |= OA_CAM_FEATURE_DEMOSAIC_MODE;
         break;
 
       case DC1394_COLOR_CODING_RAW8:
@@ -1067,7 +1039,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
         }
         // This is also a guess.  Could be GRBG, RGGB or BGGR
         camera->frameFormats[ OA_PIX_FMT_GBRG8 ] = 1;
-        camera->features.rawMode = 1;
+				camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
         rawModeFound = 1;
         break;
 
@@ -1080,7 +1052,7 @@ _processNonFormat7Modes ( oaCamera* camera, dc1394camera_t* iidcCam,
         // This is also a guess.  Could be GRBG, RGGB or BGGR, and could
         // be big-endian
         camera->frameFormats[ OA_PIX_FMT_GBRG16LE ] = 1;
-        camera->features.rawMode = 1;
+				camera->features.flags |= OA_CAM_FEATURE_RAW_MODE;
         rawModeFound = 1;
         break;
 
@@ -1119,7 +1091,7 @@ oaIIDCCloseCamera ( oaCamera* camera )
     pthread_cond_broadcast ( &cameraInfo->callbackQueued );
     pthread_join ( cameraInfo->callbackThread, &dummy );
 
-    dc1394_camera_free ( cameraInfo->iidcHandle );
+    p_dc1394_camera_free ( cameraInfo->iidcHandle );
 
     if ( cameraInfo->frameRates.numRates ) {
      free (( void* ) cameraInfo->frameRates.rates );

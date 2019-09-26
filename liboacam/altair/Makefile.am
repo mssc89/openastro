@@ -1,7 +1,7 @@
 #
 # Makefile.am -- liboacam Altair Makefile template
 #
-# Copyright 2018 James Fidell (james@openastroproject.org)
+# Copyright 2018,2019 James Fidell (james@openastroproject.org)
 #
 # License:
 #
@@ -26,13 +26,14 @@ AM_CPPFLAGS = \
   -I$(top_srcdir)/include \
   -I$(top_srcdir)/ext/libusb \
   -I$(top_srcdir)/liboacam \
-  $(LIBUSB_CFLAGS) $(LIBTOUPCAM_CFLAGS) \
+  $(LIBUSB_CFLAGS) $(SHLIBS_CFLAGS) $(LIBALTAIRCAM_CFLAGS) \
   $(DYNLIB_EXTN_CFLAGS)
 
 noinst_LTLIBRARIES = libaltair.la
 
 libaltair_la_SOURCES = Altairoacam.c Altairconnect.c Altaircallback.c \
-  Altaircontrol.c Altaircontroller.c AltairgetState.c Altairroi.c
+  Altaircontrol.c Altaircontroller.c AltairgetState.c Altairroi.c \
+	Altairdynloader.c
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
 

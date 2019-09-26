@@ -2,7 +2,8 @@
  *
  * FC2control.c -- control functions for Point Grey Gig-E cameras
  *
- * Copyright 2015,2016,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2016,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -165,8 +166,7 @@ oaFC2CameraTestControl ( oaCamera* camera, int control, oaControlValue* val )
 
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_UNSCALED ):
-      if ( val->int32 != OA_EXPOSURE_AUTO && val->int32 !=
-          OA_EXPOSURE_MANUAL ) {
+      if ( val->int32 != 0 && val->int32 != 1 ) {
         return -OA_ERR_OUT_OF_RANGE;
       }
       return OA_ERR_NONE;
@@ -273,7 +273,7 @@ oaFC2CameraSetROI ( oaCamera* camera, int x, int y )
 
 int
 oaFC2CameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND    command;
   CALLBACK      callbackData;
@@ -286,7 +286,7 @@ oaFC2CameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -322,7 +322,7 @@ oaFC2CameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "FC2: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

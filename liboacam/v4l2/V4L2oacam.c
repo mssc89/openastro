@@ -51,7 +51,8 @@
  */
 
 int
-oaV4L2GetCameras ( CAMERA_LIST* deviceList, int flags )
+oaV4L2GetCameras ( CAMERA_LIST* deviceList, unsigned long featureFlags,
+		int flags )
 {
   DIR*			dirp;
   struct dirent*	entry;
@@ -100,13 +101,11 @@ oaV4L2GetCameras ( CAMERA_LIST* deviceList, int flags )
       // now we can drop the data into the list
       if (!( dev = malloc ( sizeof ( oaCameraDevice )))) {
         closedir ( dirp );
-        _oaFreeCameraDeviceList ( deviceList );
         return -OA_ERR_MEM_ALLOC;
       }
       if (!( _private = malloc ( sizeof ( DEVICE_INFO )))) {
-        free ( dev );
+        ( void ) free (( void* ) dev );
         closedir ( dirp );
-        _oaFreeCameraDeviceList ( deviceList );
         return -OA_ERR_MEM_ALLOC;
       }
       _oaInitCameraDeviceFunctionPointers ( dev );
@@ -119,9 +118,8 @@ oaV4L2GetCameras ( CAMERA_LIST* deviceList, int flags )
       ( void ) strncpy ( _private->sysPath, sysPath, PATH_MAX );
       if (( ret = _oaCheckCameraArraySize ( deviceList )) < 0 ) {
         closedir ( dirp );
-        free ( dev );
-        free ( _private );
-        _oaFreeCameraDeviceList ( deviceList );
+        ( void ) free (( void* ) dev );
+        ( void ) free (( void* ) _private );
         return ret;
       }
       deviceList->cameraList[ deviceList->numCameras++ ] = dev;

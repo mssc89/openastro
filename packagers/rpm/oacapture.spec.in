@@ -40,6 +40,7 @@ Requires:       xz-libs
 Requires:       libjpeg-turbo
 Requires:       libftdi
 Requires:       libasicamera
+Requires:       libefwfilter
 Requires:       libuvc
 Requires:       libpng
 BuildRequires:  gcc
@@ -54,8 +55,11 @@ BuildRequires:  xz-devel
 BuildRequires:  libjpeg-turbo-devel
 BuildRequires:  libftdi-devel
 BuildRequires:  libasicamera-devel
+BuildRequires:  libefwfilter-devel
 BuildRequires:  libuvc-devel
 BuildRequires:  libpng-devel
+BuildRequires:  libraw-devel
+BuildRequires:  libgphoto2-devel
 BuildRequires:  qt
 BuildRequires:  qt-config
 BuildRequires:  qt-devel

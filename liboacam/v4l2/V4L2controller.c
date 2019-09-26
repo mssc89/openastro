@@ -2,7 +2,7 @@
  *
  * V4L2controller.c -- Main camera controller thread
  *
- * Copyright 2015,2016,2017,2018
+ * Copyright 2015,2016,2017,2018,2019
  *     James Fidell (james@openastroproject.org)
  *
  * License:
@@ -119,7 +119,7 @@ oacamV4L2controller ( void* param )
         // This is a bit cack.  Need a neater way to handle this
         if ( streaming || ( OA_CMD_RESOLUTION_SET == command->commandType ||
             OA_CMD_FRAME_INTERVAL_SET == command->commandType ||
-            OA_CMD_START == command->commandType ||
+            OA_CMD_START_STREAMING == command->commandType ||
             OA_CMD_MENU_ITEM_GET == command->commandType )) {
           switch ( command->commandType ) {
             case OA_CMD_CONTROL_SET:
@@ -131,10 +131,10 @@ oacamV4L2controller ( void* param )
             case OA_CMD_RESOLUTION_SET:
               resultCode = _processSetResolution ( cameraInfo, command );
               break;
-            case OA_CMD_START:
+            case OA_CMD_START_STREAMING:
               resultCode = _processStreamingStart ( cameraInfo, command );
               break;
-            case OA_CMD_STOP:
+            case OA_CMD_STOP_STREAMING:
               resultCode = _processStreamingStop ( cameraInfo, command );
               break;
             case OA_CMD_FRAME_INTERVAL_SET:
@@ -166,7 +166,7 @@ oacamV4L2controller ( void* param )
 
     if ( streaming ) {
 
-      if ( camera->features.frameRates ) {
+      if ( camera->features.flags & OA_CAM_FEATURE_FRAME_RATES ) {
         frameWait = 1000000.0 * cameraInfo->frameRateNumerator /
             cameraInfo->frameRateDenominator;
       } else {
@@ -1210,7 +1210,7 @@ _doStart ( V4L2_STATE* cameraInfo )
     parm.parm.capture.timeperframe.numerator = cameraInfo->frameRateNumerator;
     parm.parm.capture.timeperframe.denominator =
         cameraInfo->frameRateDenominator;
-//  camera->features.frameRates = 1;
+//  camera->features.hasFrameRates = 1;
     if ( v4l2ioctl ( cameraInfo->fd, VIDIOC_S_PARM, &parm )) {
       perror ( "VIDIOC_S_PARM v4l2ioctl failed" );
       return -OA_ERR_SYSTEM_ERROR;

@@ -1,7 +1,7 @@
 #
 # Makefile.am -- liboacam Makefile template
 #
-# Copyright 2013,2014,2015,2016,2017,2018
+# Copyright 2013,2014,2015,2016,2017,2018,2019
 #     James Fidell (james@openastroproject.org)
 #
 # License:
@@ -28,14 +28,15 @@ AM_CPPFLAGS = \
   -I$(top_srcdir)/ext/libusb \
   -I$(top_srcdir)/ext/libASICamera/include \
   -I$(top_srcdir)/ext/libtoupcam/include \
+  -I$(top_srcdir)/ext/libqhyccd/include \
   $(LIBUSB_CFLAGS) $(LIBUVC_CFLAGS) \
-  -I./euvc -I./iidc -I./pwc -I./qhy -I./sx -I./altair -I./atik -I./mallincam \
-  -I./flycap2 -I./spinnaker -I./toupcam -I./uvc -I./v4l2 -I./zwo \
+  $(LIBALTAIRCAM_CFLAGS) $(LIBALTAIRCAM_LEGACY_CFLAGS) $(LIBTOUPCAM_CFLAGS) \
+	$(LIBQHYCCD_CFLAGS) \
   $(DYNLIB_EXTN_CFLAGS)
 
 lib_LTLIBRARIES = liboacam.la
 
-if LIBASI_COMMON_COND
+if LIBASI2_COND
 ZWODIR	= zwo
 ZWOLIB	= $(ZWODIR)/libzwo.la
 endif
@@ -75,15 +76,44 @@ ALTAIRDIR= altair
 ALTAIRLIB= $(ALTAIRDIR)/libaltair.la
 endif
 
-SUBDIRS	= euvc iidc pwc qhy sx uvc $(ALTAIRDIR) $(ATIKDIR) $(MALLINCAMDIR) \
-  $(FC2DIR) $(SPINDIR) $(TOUPCAMDIR) $(V4L2DIR) $(ZWODIR) .
+if LIBSTARSHOOTG_COND
+STARSHOOTGDIR= starshootg
+STARSHOOTGLIB= $(STARSHOOTGDIR)/libstarshootg.la
+endif
+
+if LIBNNCAM_COND
+RISINGCAMDIR= risingcam
+RISINGCAMLIB= $(RISINGCAMDIR)/librisingcam.la
+endif
+
+if LIBALTAIRCAM_LEGACY_COND
+ALTAIRLEGACYDIR= altair-legacy
+ALTAIRLEGACYLIB= $(ALTAIRLEGACYDIR)/libaltairlegacy.la
+endif
+
+if LIBQHYCCD_COND
+QHYCCDDIR = qhyccd
+QHYCCDLIB = $(QHYCCDDIR)/libqhyccd.la
+endif
+
+if LIBGPHOTO2_COND
+GPHOTO2DIR = gphoto2
+GPHOTO2LIB = $(GPHOTO2DIR)/libgphoto2.la
+endif
+
+SUBDIRS	= euvc iidc pwc qhy sx uvc dummy $(ALTAIRDIR) $(ATIKDIR) \
+	$(MALLINCAMDIR) $(FC2DIR) $(SPINDIR) $(TOUPCAMDIR) $(V4L2DIR) $(ZWODIR) \
+	$(ALTAIRLEGACYDIR) $(QHYCCDDIR) $(GPHOTO2DIR) $(STARSHOOTGDIR) \
+	$(RISINGCAMDIR) .
 
 liboacam_la_SOURCES = \
   control.c debug.c oacam.c unimplemented.c utils.c
 
 liboacam_la_LIBADD = euvc/libeuvc.la iidc/libiidc.la pwc/libpwc.la \
-  qhy/libqhy.la sx/libsx.la uvc/libuvc.la $(ALTAIRLIB) $(ATIKLIB) \
-  $(MALLINCAMLIB) $(FC2LIB) $(SPINLIB) $(TOUPCAMLIB) $(V4L2LIB) $(ZWOLIB)
+  qhy/libqhy.la sx/libsx.la uvc/libuvc.la dummy/libdummy.la $(ALTAIRLIB) \
+	$(ATIKLIB) $(MALLINCAMLIB) $(FC2LIB) $(SPINLIB) $(TOUPCAMLIB) $(V4L2LIB) \
+	$(ZWOLIB) $(ALTAIRLEGACYLIB) $(QHYCCDLIB) $(GPHOTO2LIB) $(STARSHOOTGLIB) \
+	$(RISINGCAMLIB)
 
 WARNINGS = -g -O -Wall -Werror -Wpointer-arith -Wuninitialized -Wsign-compare -Wformat-security -Wno-pointer-sign $(OSX_WARNINGS)
 

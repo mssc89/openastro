@@ -2,7 +2,7 @@
  *
  * ptrIO-udev.c -- PTR IO routines (libudev)
  *
- * Copyright 2016, 2017 James Fidell (james@openastroproject.org)
+ * Copyright 2016, 2017, 2018 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -42,9 +42,20 @@
 int
 _ptrWrite ( int fd, const char* buffer, int len )
 {
+	// Done this way as opposed to the more efficient single write
+	// to allow the PTR time to read the characters out of the receive
+	// buffer;
+	while ( len-- ) {
+		if (( write ( fd, buffer++, 1 )) != 1 ) {
+			return -1;
+		}
+		usleep ( 50 );
+	}
+/*
   if ( write ( fd, buffer, len ) != len ) {
     return -1;
   }
+*/
   return 0;
 }
 

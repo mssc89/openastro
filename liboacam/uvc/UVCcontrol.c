@@ -2,7 +2,8 @@
  *
  * UVCcontrol.c -- control functions for UVC cameras
  *
- * Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -153,8 +154,8 @@ oaUVCCameraTestControl ( oaCamera* camera, int control, oaControlValue* val )
       break;
 
     case OA_CAM_CTRL_MODE_AUTO( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ):
-      if ( val->int32 != OA_EXPOSURE_AUTO && val->int32 !=
-          OA_EXPOSURE_MANUAL ) {
+      if ( val->int32 < OA_EXPOSURE_AUTO ||
+					val->int32 > OA_EXPOSURE_APERTURE_PRIORITY ) {
         return -OA_ERR_OUT_OF_RANGE;
       }
       return OA_ERR_NONE;
@@ -236,7 +237,7 @@ oaUVCCameraSetResolution ( oaCamera* camera, int x, int y )
 
 int
 oaUVCCameraStartStreaming ( oaCamera* camera,
-    void* (*callback)(void*, void*, int), void* callbackArg )
+    void* (*callback)(void*, void*, int, void* ), void* callbackArg )
 {
   OA_COMMAND    command;
   CALLBACK      callbackData;
@@ -249,7 +250,7 @@ oaUVCCameraStartStreaming ( oaCamera* camera,
   OA_CLEAR ( command );
   callbackData.callback = callback;
   callbackData.callbackArg = callbackArg;
-  command.commandType = OA_CMD_START;
+  command.commandType = OA_CMD_START_STREAMING;
   command.commandData = ( void* ) &callbackData;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
@@ -285,7 +286,7 @@ oaUVCCameraStopStreaming ( oaCamera* camera )
   oacamDebugMsg ( DEBUG_CAM_CTRL, "UVC: control: %s()\n", __FUNCTION__ );
 
   OA_CLEAR ( command );
-  command.commandType = OA_CMD_STOP;
+  command.commandType = OA_CMD_STOP_STREAMING;
 
   oaDLListAddToTail ( cameraInfo->commandQueue, &command );
   pthread_cond_broadcast ( &cameraInfo->commandQueued );

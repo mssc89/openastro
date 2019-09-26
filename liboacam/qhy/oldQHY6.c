@@ -2,7 +2,7 @@
  *
  * oldQHY6.c -- Old QHY6 camera interface
  *
- * Copyright 2014,2015,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -118,7 +118,7 @@ _oldQHY6InitCamera ( oaCamera* camera )
   cameraInfo->videoGrey16 = 1;
   cameraInfo->videoCurrent = OA_PIX_FMT_GREY16BE;
 
-  for ( i = 1; i <= 4; i++ ) {
+  for ( i = 1; i <= OA_MAX_BINNING; i++ ) {
     cameraInfo->frameSizes[i].numSizes = 0;
     cameraInfo->frameSizes[i].sizes = 0;
   }
@@ -150,8 +150,6 @@ _oldQHY6InitCamera ( oaCamera* camera )
   cameraInfo->buffers = 0;
   cameraInfo->configuredBuffers = 0;
 
-  camera->features.ROI = 0;
-  camera->features.hasReset = 0;
   cameraInfo->topOffset = cameraInfo->bottomOffset = 0;
 
   _recalculateSizes ( camera );
@@ -693,6 +691,8 @@ closeCamera ( oaCamera* camera )
     }
     free (( void* ) cameraInfo->xferBuffer );
     free (( void* ) cameraInfo->buffers );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
+    free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) cameraInfo );
     free (( void* ) camera->_common );
     free (( void* ) camera );

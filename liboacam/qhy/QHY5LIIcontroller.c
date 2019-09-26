@@ -2,7 +2,7 @@
  *
  * QHY5LIIcontroller.c -- Main camera controller thread
  *
- * Copyright 2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2015,2017,2018,2019 James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -84,7 +84,7 @@ static uint16_t mt9m034_seq_data[] = {
 };
 
 
-static int	_processSetControl ( QHY_STATE*, OA_COMMAND* );
+static int	_processSetControl ( oaCamera*, OA_COMMAND* );
 static int	_processGetControl ( QHY_STATE*, OA_COMMAND* );
 static int	_processSetResolution ( oaCamera*, OA_COMMAND* );
 static int	_processStreamingStart ( oaCamera*, OA_COMMAND* );
@@ -134,7 +134,7 @@ oacamQHY5LIIcontroller ( void* param )
       if ( command ) {
         switch ( command->commandType ) {
           case OA_CMD_CONTROL_SET:
-            resultCode = _processSetControl ( cameraInfo, command );
+            resultCode = _processSetControl ( camera, command );
             break;
           case OA_CMD_CONTROL_GET:
             resultCode = _processGetControl ( cameraInfo, command );
@@ -142,10 +142,10 @@ oacamQHY5LIIcontroller ( void* param )
           case OA_CMD_RESOLUTION_SET:
             resultCode = _processSetResolution ( camera, command );
             break;
-          case OA_CMD_START:
+          case OA_CMD_START_STREAMING:
             resultCode = _processStreamingStart ( camera, command );
             break;
-          case OA_CMD_STOP:
+          case OA_CMD_STOP_STREAMING:
             resultCode = _processStreamingStop ( cameraInfo, command );
             break;
           default:
@@ -172,8 +172,10 @@ oacamQHY5LIIcontroller ( void* param )
 
 
 static int
-_processSetControl ( QHY_STATE* cameraInfo, OA_COMMAND* command )
+_processSetControl ( oaCamera* camera, OA_COMMAND* command )
 {
+  QHY_STATE*    cameraInfo = camera->_private;
+
   oaControlValue	*valp = command->commandData;
   int			control = command->controlId;
 
@@ -232,19 +234,17 @@ _processSetControl ( QHY_STATE* cameraInfo, OA_COMMAND* command )
           cameraInfo->currentBitDepth = oaFrameFormats[ format ].bitsPerPixel;
         }
       }
-      oaQHY5LIISetAllControls ( cameraInfo );
+      oaQHY5LIISetAllControls ( camera );
       break;
     }
 
     case OA_CAM_CTRL_HIGHSPEED:
-      if ( valp->valueType != OA_CTRL_TYPE_BOOLEAN ) {
+      if ( valp->valueType != OA_CTRL_TYPE_INT32 ) {
         fprintf ( stderr, "%s: invalid control type %d where bool expected\n",
             __FUNCTION__, valp->valueType );
         return -OA_ERR_INVALID_CONTROL_TYPE;
       }
-      val_s32 = valp->boolean;
-
-      cameraInfo->currentHighSpeed = val_s32;
+      cameraInfo->currentHighSpeed = valp->int32;
       _doSetHighSpeed ( cameraInfo, cameraInfo->currentHighSpeed );
       break;
 
@@ -527,20 +527,30 @@ _abortFrame ( QHY_STATE* cameraInfo )
 
 
 void
-oaQHY5LIISetAllControls ( QHY_STATE* cameraInfo )
+oaQHY5LIISetAllControls ( oaCamera* camera )
 {
+  QHY_STATE*		cameraInfo = camera->_private;
+  int restart = 0;
+
   oacamDebugMsg ( DEBUG_CAM_CTRL, "QHY5L-II: control: %s()\n",
       __FUNCTION__ );
 
+  if ( cameraInfo->isStreaming ) {
+    restart = 1;
+    ( void ) _processStreamingStop ( cameraInfo, 0 );
+  }
   _doSetBitDepth ( cameraInfo, cameraInfo->currentBitDepth );
   _doSetHDR ( cameraInfo, cameraInfo->currentHDR );
   _doSetUSBTraffic ( cameraInfo, cameraInfo->currentUSBTraffic );
   _doSetHighSpeed ( cameraInfo, cameraInfo->currentHighSpeed );
   _doSetResolution ( cameraInfo, cameraInfo->xSize, cameraInfo->ySize );
-  _doSetExposure ( cameraInfo, cameraInfo->currentExposure, 1 );
+  _doSetExposure ( cameraInfo, cameraInfo->currentExposure, 0 );
   _doSetGain ( cameraInfo, cameraInfo->currentGain );
   _doSetUSBTraffic ( cameraInfo, cameraInfo->currentUSBTraffic );
-  _doSetExposure ( cameraInfo, cameraInfo->currentExposure, 1 );
+  _doSetExposure ( cameraInfo, cameraInfo->currentExposure, 0 );
+  if ( restart ) {
+    ( void ) _processStreamingStart ( camera, 0 );
+  }
 }
 
 
@@ -859,7 +869,7 @@ static int
 _processStreamingStart ( oaCamera* camera, OA_COMMAND* command )
 {
   QHY_STATE*			cameraInfo = camera->_private;
-  CALLBACK*			cb = command->commandData;
+  CALLBACK*			cb;
   int				txId, ret, txBufferSize, numTxBuffers;
   struct libusb_transfer*	transfer;
   unsigned char	buf[1] = { 100 };
@@ -868,8 +878,11 @@ _processStreamingStart ( oaCamera* camera, OA_COMMAND* command )
     return -OA_ERR_INVALID_COMMAND;
   }
 
-  cameraInfo->streamingCallback.callback = cb->callback;
-  cameraInfo->streamingCallback.callbackArg = cb->callbackArg;
+  if ( command ) {
+    cb = command->commandData;
+    cameraInfo->streamingCallback.callback = cb->callback;
+    cameraInfo->streamingCallback.callbackArg = cb->callbackArg;
+  }
 
   txBufferSize = cameraInfo->captureLength;
   // This is a guess

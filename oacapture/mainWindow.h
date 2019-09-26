@@ -2,7 +2,8 @@
  *
  * mainWindow.h -- class declaration
  *
- * Copyright 2013,2014,2015,2016,2017 James Fidell (james@openastroproject.org)
+ * Copyright 2013,2014,2015,2016,2017,2018,2019
+ *     James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -28,7 +29,7 @@
 
 #include <oa_common.h>
 
-#ifdef HAVE_QT5
+#if HAVE_QT5
 #include <QtWidgets>
 #endif
 #include <QtCore>
@@ -40,6 +41,17 @@ extern "C" {
 #include <openastro/timer.h>
 } 
 
+#include "focusOverlay.h"
+#include "demosaicSettings.h"
+#include "timerSettings.h"
+#include "profileSettings.h"
+#include "filterSettings.h"
+#include "histogramSettings.h"
+#include "autorunSettings.h"
+#include "generalSettings.h"
+#include "cameraSettings.h"
+
+#include "mainWindow.h"
 #include "configuration.h"
 #include "captureWidget.h"
 #include "controlWidget.h"
@@ -48,15 +60,13 @@ extern "C" {
 #include "cameraWidget.h"
 #include "previewWidget.h"
 #include "histogramWidget.h"
-#include "focusOverlay.h"
-
 
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
 
   public:
-			MainWindow();
+			MainWindow ( QString );
 			~MainWindow();
     void		clearDroppedFrames ( void );
     void		setNightStyleSheet ( QWidget* );
@@ -64,10 +74,10 @@ class MainWindow : public QMainWindow
     void		destroyLayout ( QLayout* );
     void		setFlipX ( int );
     void		setFlipY ( int );
-    void		writeConfig ( void );
     void		configure ( void );
     void		createControlWidgets ( void );
     void		createPreviewWindow ( void );
+    void    updateConfig ( void );
 
   private:
     QMenu*		fileMenu;
@@ -79,6 +89,7 @@ class MainWindow : public QMainWindow
     QMenu*		advancedMenu;
     QMenu*		helpMenu;
     QAction*		disconnectCam;
+    QAction*		resetCam;
     QAction*		rescanCam;
     QAction*		cameraMenuSeparator;
     QAction*		disconnectWheel;
@@ -97,8 +108,10 @@ class MainWindow : public QMainWindow
     QLabel*             timerStatus;
     QLabel*             wheelStatus;
     QLabel*             locationLabel;
+    QString    userConfigFile;
 
-    void		readConfig ( void );
+    void		readConfig ( QString );
+    void		writeConfig ( QString );
     void		createStatusBar ( void );
     void		createMenus ( void );
     void		doDisconnectCam ( void );
@@ -196,6 +209,7 @@ class MainWindow : public QMainWindow
   public slots:
     void		connectCamera( int );
     void		disconnectCamera ( void );
+    void		resetCamera ( void );
     void		rescanCameras ( void );
     void		connectFilterWheel( int );
     void		disconnectFilterWheel ( void );
@@ -245,4 +259,11 @@ class MainWindow : public QMainWindow
     void		showStatusMessage ( QString );
     void		frameWriteFailedPopup ( void );
     void		setLocation ( void );
+		void		promptForFilterChange ( int );
+		void		outputUnwritable ( void );
+		int			outputExists ( void );
+		void		outputExistsUnwritable ( void );
+		void		createFileFailed ( void );
+		void		enableTimerExternalLED ( int );
+		int			getTimerExternalLEDState ( void );
 };

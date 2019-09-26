@@ -2,7 +2,8 @@
  *
  * QHY6.c -- QHY6 camera interface
  *
- * Copyright 2014,2015,2017,2018 James Fidell (james@openastroproject.org)
+ * Copyright 2014,2015,2017,2018,2019
+ *   James Fidell (james@openastroproject.org)
  *
  * License:
  *
@@ -59,19 +60,23 @@ _QHY6InitCamera ( oaCamera* camera )
   OA_CLEAR ( camera->features );
   _QHY6InitFunctionPointers ( camera );
 
+	// libqhyccd: min 0, max 63, step 1, def 0
   camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_GAIN ) = OA_CTRL_TYPE_INT32;
   commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_GAIN ) = 0;
   commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_GAIN ) = 63;
   commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_GAIN ) = 1;
   commonInfo->OA_CAM_CTRL_DEF( OA_CAM_CTRL_GAIN ) = QHY6_DEFAULT_GAIN;
 
-  camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = OA_CTRL_TYPE_INT64;
-  commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 0;
-  commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 0xffffffff;
-  commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1;
+	// libqhyccd: min 1000, max 1800000000, step 1000, def 1 (clearly wrong)
+  camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
+			OA_CTRL_TYPE_INT64;
+  commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1000;
+  commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1800000000;
+  commonInfo->OA_CAM_CTRL_STEP( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) = 1000;
   commonInfo->OA_CAM_CTRL_DEF( OA_CAM_CTRL_EXPOSURE_ABSOLUTE ) =
       QHY6_DEFAULT_EXPOSURE * 1000;
 
+	// libqhyccd: min 0, max 1, step 1, def 1
   camera->OA_CAM_CTRL_TYPE( OA_CAM_CTRL_HIGHSPEED ) = OA_CTRL_TYPE_BOOLEAN;
   commonInfo->OA_CAM_CTRL_MIN( OA_CAM_CTRL_HIGHSPEED ) = 0;
   commonInfo->OA_CAM_CTRL_MAX( OA_CAM_CTRL_HIGHSPEED ) = 1;
@@ -120,8 +125,7 @@ _QHY6InitCamera ( oaCamera* camera )
   cameraInfo->buffers = 0;
   cameraInfo->configuredBuffers = 0;
 
-  camera->features.ROI = 0;
-  camera->features.hasReset = 1;
+  camera->features.flags |= OA_CAM_FEATURE_RESET;
   camera->features.pixelSizeX = 6500;
   camera->features.pixelSizeY = 6250;
 
@@ -157,7 +161,7 @@ _QHY6InitCamera ( oaCamera* camera )
     fprintf ( stderr, "malloc of buffer array failed in %s\n",
         __FUNCTION__ );
     free (( void* ) cameraInfo->frameSizes[1].sizes );
-      free (( void* ) cameraInfo->frameSizes[2].sizes );
+    free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) cameraInfo->xferBuffer );
     return -OA_ERR_MEM_ALLOC;
   }
@@ -194,6 +198,8 @@ _QHY6InitCamera ( oaCamera* camera )
     }
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
+    free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) camera->_common );
     free (( void* ) camera->_private );
     free (( void* ) camera );
@@ -213,6 +219,8 @@ _QHY6InitCamera ( oaCamera* camera )
     }
     free (( void* ) cameraInfo->buffers );
     free (( void* ) cameraInfo->xferBuffer );
+    free (( void* ) cameraInfo->frameSizes[1].sizes );
+    free (( void* ) cameraInfo->frameSizes[2].sizes );
     free (( void* ) camera->_common );
     free (( void* ) camera->_private );
     free (( void* ) camera );
